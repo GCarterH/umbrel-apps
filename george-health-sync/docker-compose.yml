@@ -1,6 +1,8 @@
-# Umbrel community app. No custom image: the server code ships in this app folder (server/, copied in by
-# umbrel/make_store.sh) and runs on the stock Python image. Umbrel copies the app folder to ${APP_DATA_DIR}.
-# Python packages are installed once into the data folder on first start (needs internet that one time).
+# Umbrel community app. There's no custom image: the server runs on the stock Python image.
+# Umbrel's updates only replace this file and umbrel-app.yml, so this file pins the server code: on start it
+# downloads that exact copy from GitHub once (checked against its SHA-256), keeps it in the data folder, and
+# installs the Python packages it needs. HEALTHSYNC_CODE_URL and HEALTHSYNC_CODE_SHA256 are filled in by
+# umbrel/publish.sh. Data in /data (database, token) is never touched by updates.
 version: "3.7"
 
 services:
@@ -15,9 +17,7 @@ services:
     image: python:3.12.7-slim
     user: "1000:1000"
     restart: on-failure
-    working_dir: /srv
     volumes:
-      - ${APP_DATA_DIR}/server:/srv:ro
       - ${APP_DATA_DIR}/data:/data
     environment:
       HOME: /data
@@ -28,11 +28,35 @@ services:
       HEALTHSYNC_SETUP_PAGE: "1"
       HEALTHSYNC_HOME_TZ: Europe/London
       HEALTHSYNC_PUBLIC_URL: http://umbrel.local:8787
+      HEALTHSYNC_CODE_URL: https://codeload.github.com/GCarterH/umbrel-apps/tar.gz/b345724a0f984f8a52c2923def28da5f5483b742
+      HEALTHSYNC_CODE_SHA256: 33d0eac1426883526320d78c27a1738065fd5560458ae4a6677c8e0ce500e3ad
     command:
-      - sh
+      - python
       - -c
-      - >-
-        if ! cmp -s requirements.txt /data/pylib/requirements.txt; then
-        pip install --upgrade --no-cache-dir --disable-pip-version-check --target /data/pylib -r requirements.txt &&
-        cp requirements.txt /data/pylib/requirements.txt; fi &&
-        exec python -m uvicorn app.main:app --host 0.0.0.0 --port 8787 --proxy-headers --forwarded-allow-ips '*'
+      - |
+        import hashlib, io, os, shutil, subprocess, sys, tarfile, urllib.request
+        url, want = os.environ["HEALTHSYNC_CODE_URL"], os.environ["HEALTHSYNC_CODE_SHA256"]
+        code = "/data/code/" + want[:16]
+        if not os.path.exists(code + "/app/main.py"):
+            print("Downloading server code:", url, flush=True)
+            blob = urllib.request.urlopen(url, timeout=300).read()
+            got = hashlib.sha256(blob).hexdigest()
+            if got != want:
+                sys.exit("Server code download doesn't match its checksum (got %s), not starting." % got)
+            tmp = code + ".partial"
+            shutil.rmtree(tmp, ignore_errors=True)
+            with tarfile.open(fileobj=io.BytesIO(blob)) as tar:
+                for m in tar.getmembers():
+                    parts = m.name.split("/", 3)
+                    if len(parts) == 4 and parts[1:3] == ["george-health-sync", "server"] and (m.isfile() or m.isdir()):
+                        m.name = parts[3]
+                        tar.extract(m, tmp, filter="data")
+            os.replace(tmp, code)
+        req, stamp = code + "/requirements.txt", "/data/pylib/requirements.txt"
+        if not (os.path.exists(stamp) and open(stamp).read() == open(req).read()):
+            subprocess.check_call([sys.executable, "-m", "pip", "install", "--upgrade", "--no-cache-dir",
+                                   "--disable-pip-version-check", "--target", "/data/pylib", "-r", req])
+            shutil.copy(req, stamp)
+        os.chdir(code)
+        os.execv(sys.executable, [sys.executable, "-m", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8787",
+                                  "--proxy-headers", "--forwarded-allow-ips", "*"])
