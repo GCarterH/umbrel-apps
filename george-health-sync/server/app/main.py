@@ -247,7 +247,7 @@ def get_export(request: Request, from_: str = Query(None, alias='from'), to: str
 @app.get('/', response_class=HTMLResponse)
 def setup_page(request: Request):
     if not config.SETUP_PAGE:
-        return HTMLResponse('<p>Health Sync server is running. The setup page is turned off; the token is in the server log.</p>')
+        return HTMLResponse('<p>Health Sync server {} is running. The setup page is turned off; the token is in the server log.</p>'.format(__version__))
     url = config.PUBLIC_URL or str(request.base_url).rstrip('/')
     link = config_link(url, STATE['token'])
     qr = segno.make(link, error='m').svg_inline(scale=6, border=2, dark='#1F4E5A')
@@ -260,6 +260,7 @@ button{{font:inherit;padding:.4rem .9rem}} small{{color:#5a6b70}}
 @media (prefers-color-scheme:dark){{body{{background:#121a1c;color:#e4eef0}} code{{background:#22313a}} .qr{{background:#fff;display:inline-block;padding:8px;border-radius:8px}}}}
 </style></head><body>
 <h1><img src="/icon.png" alt="" width="48" height="48" style="vertical-align:middle;margin-right:.5rem">Health Sync</h1>
+<p style="margin-top:-.8rem"><small>Version {__version__}</small></p>
 <p>In the iPhone app go to <b>Settings</b> and scan this code, or type the address and token.</p>
 <div class="qr">{qr}</div>
 <p>Server address: <code>{html.escape(url)}</code><br>Token: <code>{html.escape(STATE['token'])}</code></p>

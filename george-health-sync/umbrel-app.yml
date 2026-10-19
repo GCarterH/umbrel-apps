@@ -2,7 +2,7 @@ manifestVersion: 1
 id: george-health-sync
 category: files
 name: Health Sync
-version: "0.1.1"
+version: "0.1.2"
 tagline: Keep your Apple Health data on your Umbrel
 description: >-
   Receives Apple Health records from the Health Sync iPhone app and stores them in a SQLite
@@ -23,4 +23,4 @@ defaultUsername: ""
 defaultPassword: ""
 submitter: George Hay
 submission: ""
-releaseNotes: "Steps, distance and flights now match the Health app more closely when the Watch and iPhone both counted (checked against 89 days of phone data)."
+releaseNotes: "Steps, distance and flights now match the Health app more closely when the Watch and iPhone both counted (checked against 89 days of phone data). The version number now shows on the Health Sync page."
