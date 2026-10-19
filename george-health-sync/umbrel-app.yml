@@ -1,0 +1,26 @@
+manifestVersion: 1
+id: george-health-sync
+category: files
+name: Health Sync
+version: "0.1.0"
+tagline: Keep your Apple Health data on your Umbrel
+description: >-
+  Receives Apple Health records from the Health Sync iPhone app and stores them in a SQLite
+  database on this Umbrel. The spreadsheet script reads daily numbers and raw records back from it.
+  Nothing is sent to any third-party cloud. Open the app to see the token and a QR code for the phone.
+developer: George Hay
+website: ""
+dependencies: []
+repo: ""
+support: ""
+port: 8787
+# Umbrel loads the tile icon from a URL. Point this at icon.png (next to this file) once the app store repo exists,
+# e.g. https://raw.githubusercontent.com/<user>/<repo>/main/george-health-sync/icon.png
+icon: https://raw.githubusercontent.com/GCarterH/umbrel-apps/main/george-health-sync/icon.png
+gallery: []
+path: ""
+defaultUsername: ""
+defaultPassword: ""
+submitter: George Hay
+submission: ""
+releaseNotes: "First version: uploads, deduping, deletions, status, daily numbers and raw export."

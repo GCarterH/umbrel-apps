@@ -1,0 +1,38 @@
+# Umbrel community app. No custom image: the server code ships in this app folder (server/, copied in by
+# umbrel/make_store.sh) and runs on the stock Python image. Umbrel copies the app folder to ${APP_DATA_DIR}.
+# Python packages are installed once into the data folder on first start (needs internet that one time).
+version: "3.7"
+
+services:
+  app_proxy:
+    environment:
+      APP_HOST: george-health-sync_server_1
+      APP_PORT: 8787
+      # The setup page (token + QR) needs the Umbrel login; the API uses its own token so the phone can reach it.
+      PROXY_AUTH_WHITELIST: "/api/*"
+
+  server:
+    image: python:3.12.7-slim
+    user: "1000:1000"
+    restart: on-failure
+    working_dir: /srv
+    volumes:
+      - ${APP_DATA_DIR}/server:/srv:ro
+      - ${APP_DATA_DIR}/data:/data
+    environment:
+      HOME: /data
+      PYTHONDONTWRITEBYTECODE: "1"
+      PYTHONUNBUFFERED: "1"
+      PYTHONPATH: /data/pylib
+      HEALTHSYNC_DATA_DIR: /data
+      HEALTHSYNC_SETUP_PAGE: "1"
+      HEALTHSYNC_HOME_TZ: Europe/London
+      HEALTHSYNC_PUBLIC_URL: http://umbrel.local:8787
+    command:
+      - sh
+      - -c
+      - >-
+        if ! cmp -s requirements.txt /data/pylib/requirements.txt; then
+        pip install --upgrade --no-cache-dir --disable-pip-version-check --target /data/pylib -r requirements.txt &&
+        cp requirements.txt /data/pylib/requirements.txt; fi &&
+        exec python -m uvicorn app.main:app --host 0.0.0.0 --port 8787 --proxy-headers --forwarded-allow-ips '*'
