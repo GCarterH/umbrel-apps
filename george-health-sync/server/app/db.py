@@ -1,10 +1,10 @@
 """SQLite schema (spec 5.3) and connection helper."""
-import os, sqlite3, threading
+import hashlib, logging, os, sqlite3, threading, time
 from . import config
 
-SCHEMA = """
-CREATE TABLE IF NOT EXISTS samples (
-    uuid TEXT PRIMARY KEY,
+SAMPLES_TABLE = """
+CREATE TABLE IF NOT EXISTS {name} (
+    uuid TEXT NOT NULL,
     type TEXT NOT NULL,
     start_utc TEXT NOT NULL,
     end_utc TEXT NOT NULL,
@@ -17,9 +17,20 @@ CREATE TABLE IF NOT EXISTS samples (
     metadata_json TEXT,
     received_at TEXT NOT NULL,
     deleted_at TEXT
-);
+)"""
+SAMPLE_COLUMNS = 'uuid, type, start_utc, end_utc, tz, value, unit, label, source, device, metadata_json, received_at, deleted_at'
+
+SCHEMA = SAMPLES_TABLE.format(name='samples') + """;
 CREATE INDEX IF NOT EXISTS samples_type_start ON samples (type, start_utc);
 
+-- uuid lookups for samples go through this small table: an 8-byte key per record (a hash of the uuid) and the
+-- sample's rowid, about 20 bytes per record. The text index on uuid it replaces took about 51; on the Umbrel it
+-- stopped fitting in memory at about 2.5 million records, after which every insert cost a random disk read
+-- (about 140 records/s).
+CREATE TABLE IF NOT EXISTS sample_ids (k INTEGER PRIMARY KEY, rid INTEGER NOT NULL);
+"""
+
+SCHEMA += """
 CREATE TABLE IF NOT EXISTS sleep_segments (
     uuid TEXT PRIMARY KEY,
     stage TEXT NOT NULL,
@@ -118,7 +129,7 @@ def connect(path=None, cache_mb=8):
 def writer():
     """The one long-lived connection for writes (use it while holding write_lock). Its cache stays warm."""
     if 'con' not in _writer:
-        con = connect(cache_mb=160)   # holds the uuid indexes (about 100 MB at 2 million records) so lookups don't hit the disk
+        con = connect(cache_mb=256)   # holds sample_ids (about 20 bytes per record) with room to spare up to ~12 million records
         # No checkpoints on commit: on a hard disk they take 20-30 s. spool.py checkpoints in its own thread instead.
         con.execute('PRAGMA wal_autocheckpoint=0')
         con.execute('PRAGMA journal_size_limit=134217728')   # when the WAL restarts, trim the file back to 128 MB
@@ -167,6 +178,50 @@ def build_stats(con):
     if last:
         set_meta(con, 'last_upload', last)
     set_meta(con, 'stats_version', 1)
+
+
+def uid_key(uuid):
+    """8-byte signed key for a sample uuid (the first 8 bytes of its BLAKE2b hash)."""
+    return int.from_bytes(hashlib.blake2b(uuid.encode(), digest_size=8).digest(), 'big', signed=True)
+
+
+def needs_migration(con):
+    """True for databases from before 0.1.10, whose samples table has a text index on uuid."""
+    return con.execute("SELECT 1 FROM sqlite_master WHERE name = 'sqlite_autoindex_samples_1'").fetchone() is not None
+
+
+def migrate(path=None):
+    """One-off rebuild of samples without the text uuid index, plus sample_ids. One transaction: if it's interrupted,
+    the old table is untouched and it runs again on the next start. Rowids are kept."""
+    log = logging.getLogger('healthsync')
+    con = connect(path, cache_mb=160)
+    con.isolation_level = None
+    if not needs_migration(con):
+        return
+    con.create_function('uid_key', 1, uid_key, deterministic=True)
+    t = time.monotonic()
+    n = con.execute('SELECT MAX(rowid) FROM samples').fetchone()[0] or 0
+    log.info('one-off database upgrade: rebuilding the samples table (about %d records); uploads keep queuing meanwhile', n)
+    con.execute('BEGIN IMMEDIATE')
+    try:
+        con.execute('DROP TABLE IF EXISTS samples_new')
+        con.execute(SAMPLES_TABLE.format(name='samples_new'))
+        con.execute(f'INSERT INTO samples_new (rowid, {SAMPLE_COLUMNS}) SELECT rowid, {SAMPLE_COLUMNS} FROM samples ORDER BY rowid')
+        t1 = time.monotonic()
+        con.execute('DELETE FROM sample_ids')
+        con.execute('INSERT OR IGNORE INTO sample_ids (k, rid) SELECT uid_key(uuid), rowid FROM samples_new ORDER BY 1')
+        t2 = time.monotonic()
+        con.execute('DROP TABLE samples')
+        con.execute('ALTER TABLE samples_new RENAME TO samples')
+        con.execute('CREATE INDEX samples_type_start ON samples (type, start_utc)')
+        con.execute('COMMIT')
+    except Exception:
+        con.execute('ROLLBACK')
+        raise
+    finally:
+        con.close()
+    log.info('database upgrade done in %.0fs (copy %.0fs, ids %.0fs, index %.0fs)', time.monotonic() - t, t1 - t, t2 - t1,
+             time.monotonic() - t2)
 
 
 def init(path=None):

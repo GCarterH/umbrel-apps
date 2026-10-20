@@ -70,10 +70,36 @@ def _deleted(con, uuids):
 
 def _existing(con, table, uuids):
     """The uuids already stored in a table (one indexed lookup per chunk, not per record)."""
+    if table == 'samples':
+        return _existing_samples(con, uuids)
     out, uuids = set(), list(uuids)
     for i in range(0, len(uuids), 500):
         chunk = uuids[i:i + 500]
         out.update(r[0] for r in con.execute(f'SELECT uuid FROM {table} WHERE uuid IN (%s)' % ','.join('?' * len(chunk)), chunk))
+    return out
+
+
+def sample_rowid(con, uuid):
+    """rowid of a stored sample, via sample_ids (checked against the row, in case two uuids share a key)."""
+    hit = con.execute('SELECT rid FROM sample_ids WHERE k = ?', (db.uid_key(uuid),)).fetchone()
+    if hit:
+        row = con.execute('SELECT uuid FROM samples WHERE rowid = ?', (hit[0],)).fetchone()
+        if row and row[0] == uuid:
+            return hit[0]
+    return None
+
+
+def _existing_samples(con, uuids):
+    keys = {}
+    for u in uuids:
+        keys.setdefault(db.uid_key(u), []).append(u)
+    out, klist = set(), list(keys)
+    for i in range(0, len(klist), 500):
+        chunk = klist[i:i + 500]
+        for k, rid in con.execute('SELECT k, rid FROM sample_ids WHERE k IN (%s)' % ','.join('?' * len(chunk)), chunk).fetchall():
+            row = con.execute('SELECT uuid FROM samples WHERE rowid = ?', (rid,)).fetchone()
+            if row and row[0] in keys[k]:
+                out.add(row[0])
     return out
 
 
@@ -103,7 +129,15 @@ def _store(con, records, parse, table, cols, stat_type, time_col='start_utc', af
         deleted = _deleted(con, [row['uuid'] for row, r in new])
         received = T.now()
         sql = f'INSERT OR IGNORE INTO {table} ({",".join(cols)}, received_at, deleted_at) VALUES ({",".join("?" * (len(cols) + 2))})'
-        con.executemany(sql, [[row[c] for c in cols] + [received, deleted.get(row['uuid'])] for row, r in new])
+        values = [[row[c] for c in cols] + [received, deleted.get(row['uuid'])] for row, r in new]
+        if table == 'samples':   # one execute per row to get each rowid for sample_ids
+            ids = []
+            for row_values in values:
+                ids.append((db.uid_key(row_values[0]), con.execute(sql, row_values).lastrowid))
+            ids.sort()
+            con.executemany('INSERT OR IGNORE INTO sample_ids (k, rid) VALUES (?, ?)', ids)
+        else:
+            con.executemany(sql, values)
         stats = {}
         for row, r in new:
             st = stats.setdefault(stat_type(row), [0, 0, ''])
@@ -232,6 +266,13 @@ def deletions(con, records):
         else:
             duplicates += 1
         for table, type_col in DELETABLE:
+            if table == 'samples':
+                rid = sample_rowid(con, uid)
+                hit = rid and con.execute('SELECT type FROM samples WHERE rowid = ? AND deleted_at IS NULL', (rid,)).fetchone()
+                if hit:
+                    con.execute('UPDATE samples SET deleted_at = ? WHERE rowid = ?', (now, rid))
+                    db.bump(con, hit[0], -1, 1)
+                continue
             hit = con.execute(f'SELECT {type_col or "NULL"} FROM {table} WHERE uuid = ? AND deleted_at IS NULL', (uid,)).fetchone()
             if hit:
                 con.execute(f'UPDATE {table} SET deleted_at = ? WHERE uuid = ?', (now, uid))
