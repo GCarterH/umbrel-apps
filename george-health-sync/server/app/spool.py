@@ -109,6 +109,12 @@ def _write_group():
     files = _files()
     if not files:
         return False
+    if _wal_size() > WAL_PAUSE and not _caught_up.is_set():
+        # Let the checkpointer catch up; uploads queue meanwhile (503 once the queue is full). After a complete
+        # checkpoint the next commit starts the WAL from the beginning, so it stays around WAL_PAUSE at most.
+        _ckpt_wake.set()
+        _caught_up.wait(5)
+        return True
     group, n, kind = [], 0, files[0].split('.')[1]
     for name in files:
         if name.split('.')[1] != kind or (group and n >= GROUP):
@@ -139,9 +145,9 @@ def _write_group():
             con.rollback()
             raise
         t2 = time.monotonic()
-        wal = config.DB_PATH + '-wal'
-        if os.path.exists(wal) and os.path.getsize(wal) > 256 * 1024 * 1024:   # don't let the WAL grow without limit
-            con.execute('PRAGMA wal_checkpoint(PASSIVE)')
+        _caught_up.clear()   # new WAL pages since the last checkpoint
+        if _wal_size() > WAL_CHECKPOINT:
+            _ckpt_wake.set()
     for name, _ in group:
         os.remove(os.path.join(DIR, name))
     acc = sum(r['accepted'] for r in results.values())
@@ -162,47 +168,56 @@ def _write_group():
     return True
 
 
-def _idle_checkpoint():
-    with db.write_lock:
-        t = time.monotonic()
-        busy, wal_pages, moved = db.writer().execute('PRAGMA wal_checkpoint(PASSIVE)').fetchone()
-    if wal_pages:
-        log.info('checkpoint while idle: %d of %d WAL pages moved into the database in %.2fs', moved, wal_pages, time.monotonic() - t)
+WAL_CHECKPOINT = 128 * 1024 * 1024   # start a checkpoint once the WAL is this big (or when uploads stop)
+WAL_PAUSE = 1024 * 1024 * 1024       # writer waits above this, so the WAL can't grow without limit
+_last_write = [0.0]
+_caught_up = threading.Event()       # set when a checkpoint has copied the whole WAL and nothing was written since
+_ckpt_wake = threading.Event()
 
 
-def _warm():
-    """Read the uuid indexes once so the duplicate check doesn't seek around the disk for every record."""
-    t = time.monotonic()
-    con = db.writer()
-    with db.write_lock:
-        for table in ('samples', 'sleep_segments', 'workouts', 'ecgs'):
-            con.execute(f'SELECT COUNT(*) FROM {table} INDEXED BY sqlite_autoindex_{table}_1').fetchone()
-    log.info('uuid indexes read into memory in %.1fs', time.monotonic() - t)
+def _wal_size():
+    wal = config.DB_PATH + '-wal'
+    return os.path.getsize(wal) if os.path.exists(wal) else 0
+
+
+def _checkpointer():
+    """Copy the WAL into the database in the background, on its own connection, alongside the writer
+    (SQLite allows that in WAL mode). Commits stay fast appends; each changed page is written back once per round."""
+    con = db.connect()
+    while True:
+        _ckpt_wake.wait(5)
+        _ckpt_wake.clear()
+        try:
+            size = _wal_size()
+            idle = time.monotonic() - _last_write[0] > 20 and not _files()
+            if size < WAL_CHECKPOINT and not (idle and size):
+                continue
+            t = time.monotonic()
+            busy, frames, done = con.execute('PRAGMA wal_checkpoint(PASSIVE)').fetchone()
+            took = time.monotonic() - t
+            if frames == done:
+                _caught_up.set()
+                if not idle:
+                    continue   # all copied; the writer's next commit starts the WAL from the beginning
+            if idle and frames == done:
+                with db.write_lock:   # nothing is writing: reset the WAL file to zero length
+                    con.execute('PRAGMA wal_checkpoint(TRUNCATE)')
+            log.info('checkpoint: %d of %d WAL pages (%.0f MB) copied into the database in %.1fs%s',
+                     done, frames, size / 1e6, took, ', WAL emptied' if idle and frames == done else '')
+        except Exception:
+            log.exception('checkpoint failed; will try again')
 
 
 def _run():
-    try:
-        _warm()
-    except Exception:
-        log.exception('index warm-up failed (not fatal)')
-    idle_since = None
     while True:
         try:
             if _write_group():
-                idle_since = None
+                _last_write[0] = time.monotonic()
                 continue
         except Exception:
             log.exception('writing spooled uploads failed; retrying in 10s')
             time.sleep(10)
             continue
-        if idle_since is None:
-            idle_since = time.monotonic()
-        elif time.monotonic() - idle_since > 30:
-            try:
-                _idle_checkpoint()
-            except Exception:
-                log.exception('idle checkpoint failed')
-            idle_since = float('inf')
         _wake.wait(5)
         _wake.clear()
 
@@ -222,3 +237,4 @@ def start():
     if leftover:
         log.info('%d spooled uploads from before the restart will be written now', len(leftover))
     threading.Thread(target=_run, name='spool-writer', daemon=True).start()
+    threading.Thread(target=_checkpointer, name='checkpointer', daemon=True).start()

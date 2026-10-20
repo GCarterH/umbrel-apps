@@ -119,7 +119,9 @@ def writer():
     """The one long-lived connection for writes (use it while holding write_lock). Its cache stays warm."""
     if 'con' not in _writer:
         con = connect(cache_mb=160)   # holds the uuid indexes (about 100 MB at 2 million records) so lookups don't hit the disk
-        con.execute('PRAGMA wal_autocheckpoint=16384')   # checkpoint every 64 MB of WAL, not every 4 MB
+        # No checkpoints on commit: on a hard disk they take 20-30 s. spool.py checkpoints in its own thread instead.
+        con.execute('PRAGMA wal_autocheckpoint=0')
+        con.execute('PRAGMA journal_size_limit=134217728')   # when the WAL restarts, trim the file back to 128 MB
         _writer['con'] = con
     return _writer['con']
 
