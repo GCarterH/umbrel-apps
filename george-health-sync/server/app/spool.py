@@ -5,15 +5,17 @@ On a hard disk a batch insert can take seconds (random index lookups for the dup
 WAL checkpoint), so the phone no longer waits for it. If the server stops, spooled uploads are written on the
 next start. Spool files are named <time>-<seq>.<kind>.<gz|json>, so sorting them gives arrival order.
 """
-import itertools, json, logging, os, threading, time, zlib
+import itertools, json, logging, os, shutil, threading, time, zlib
 
 from . import config, db, ingest
 
 log = logging.getLogger('healthsync')
 DIR = os.path.join(config.DATA_DIR, 'spool')
 FAILED = os.path.join(DIR, 'failed')
-MAX_QUEUED = int(os.environ.get('HEALTHSYNC_MAX_QUEUED', '100000'))   # records; above this, uploads get 503 + Retry-After
-GROUP = 20000          # records per transaction
+# Uploads are only refused (503 + Retry-After) when spooling one would leave less than this much free disk space.
+# The spool is durable, so the phone can keep sending at full speed and the writer catches up afterwards.
+MIN_FREE = int(os.environ.get('HEALTHSYNC_MIN_FREE_MB', '1024')) * 1024 * 1024
+GROUP = 50000          # records per transaction: bigger transactions write each changed index page once
 _seq = itertools.count()
 _lock = threading.Lock()
 _queued = {}           # spool file name -> record count
@@ -66,10 +68,9 @@ def put(kind, raw, enc):
     t1 = time.monotonic()
     if not good:
         return None, recs, dict(accepted=0, duplicates=0, rejected=rejected, queued=False), (t1 - t0, 0.0)
-    with _lock:
-        if sum(_queued.values()) + len(recs) > MAX_QUEUED:
-            raise BadBody(503, 'server is busy writing earlier uploads; try again shortly')
-    name = f'{time.time_ns():020d}-{next(_seq):06d}.{kind}.{"gz" if gz else "json"}'
+    if shutil.disk_usage(DIR).free - len(raw) < MIN_FREE:
+        raise BadBody(503, 'the Umbrel is nearly out of disk space; uploads will resume once earlier ones are written')
+    name = f'{time.time_ns():020d}-{next(_seq):06d}.{kind}.{len(recs)}.{"gz" if gz else "json"}'
     path = os.path.join(DIR, name)
     with open(path + '.tmp', 'wb') as f:
         f.write(raw)
@@ -162,9 +163,9 @@ def _write_group():
                 _results.pop(k)
         _done.notify_all()
         left = sum(_queued.values())
-    log.info('wrote %s: %d records from %d uploads (%d new, %d duplicates, %d rejected) in %.2fs '
+    log.info('wrote %s: %d records from %d uploads (%d new, %d duplicates, %d rejected) in %.2fs = %.0f records/s '
                 '[insert %.2fs, commit %.2fs]; %d records still queued',
-                kind, n, len(group), acc, dup, rej, t2 - t0, t1 - t0, t2 - t1, left)
+                kind, n, len(group), acc, dup, rej, t2 - t0, n / max(t2 - t0, 1e-6), t1 - t0, t2 - t1, left)
     return True
 
 
@@ -229,11 +230,15 @@ def start():
             os.remove(os.path.join(DIR, f))   # never synced, so never answered with 200
     leftover = _files()
     for name in leftover:
-        try:
-            with open(os.path.join(DIR, name), 'rb') as f:
-                _queued[name] = len(decode(f.read(), name.endswith('.gz')))
-        except (OSError, BadBody):
-            _queued[name] = 0
+        parts = name.split('.')
+        if len(parts) == 4 and parts[2].isdigit():   # record count is in the name, so startup doesn't read the files
+            _queued[name] = int(parts[2])
+        else:   # spooled by 0.1.5 or 0.1.6
+            try:
+                with open(os.path.join(DIR, name), 'rb') as f:
+                    _queued[name] = len(decode(f.read(), name.endswith('.gz')))
+            except (OSError, BadBody):
+                _queued[name] = 0
     if leftover:
         log.info('%d spooled uploads from before the restart will be written now', len(leftover))
     threading.Thread(target=_run, name='spool-writer', daemon=True).start()
