@@ -2,7 +2,7 @@ manifestVersion: 1
 id: george-health-sync
 category: files
 name: Health Sync
-version: "0.1.10"
+version: "0.2.0"
 tagline: Keep your Apple Health data on your Umbrel
 description: >-
   Receives Apple Health records from the Health Sync iPhone app and stores them in a SQLite
@@ -23,4 +23,4 @@ defaultUsername: ""
 defaultPassword: ""
 submitter: George Hay
 submission: ""
-releaseNotes: "Much faster writing on a big database: duplicate checks use a compact ID table that fits in memory, instead of a text index that no longer did. First start rebuilds the samples table once (a few minutes on a hard disk); uploads keep queuing meanwhile."
+releaseNotes: "New dashboard: open the app to see your trends in plain words and charts (30 days to all time), including sleep, bedtime, workouts, weekday patterns and blood pressure. Connecting a phone moved to Connect a phone. First start prepares a daily summary in the background (a few minutes)."
