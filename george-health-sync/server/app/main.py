@@ -8,7 +8,7 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, StreamingResponse
 
-from . import __version__, config, daily as D, dailycache, db, ingest, spool, timeutil as T
+from . import __version__, config, daily as D, dailycache, db, idindex, ingest, spool, timeutil as T
 
 log = logging.getLogger('healthsync')
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(message)s')
@@ -93,6 +93,49 @@ async def post_ecgs(request: Request):
 @app.post('/api/v1/deletions')
 async def post_deletions(request: Request):
     return await upload(request, 'deletions')
+
+
+@app.post('/api/v1/have')
+async def post_have(request: Request):
+    """Which of these uuids does the server not hold yet? Body (gzip or plain): {"type": "<HK identifier>",
+    "uuids": [...]}, at most 50,000. Reply {"missing": [...]}: uuids neither stored nor waiting in the upload queue.
+    Any type works (samples, sleep, HKWorkoutTypeIdentifier, HKDataTypeIdentifierElectrocardiogram). 503 with
+    Retry-After while the id index is still loading after a restart."""
+    auth(request)
+    t0 = time.monotonic()
+    raw = await request.body()
+    enc = request.headers.get('content-encoding', '').lower().strip()
+
+    try:
+        body = await run_in_threadpool(_have_body, raw, enc)
+    except spool.BadBody as e:
+        raise HTTPException(e.status, str(e))
+    uuids = body.get('uuids') if isinstance(body, dict) else None
+    if not isinstance(uuids, list) or not all(isinstance(u, str) for u in uuids):
+        raise HTTPException(400, 'expected {"type": "...", "uuids": ["...", ...]}')
+    if len(uuids) > 50000:
+        raise HTTPException(413, 'at most 50,000 uuids per request')
+    if not idindex.ready():
+        raise HTTPException(503, 'still loading record ids after a restart; try again shortly', headers={'Retry-After': '30'})
+    miss = await run_in_threadpool(idindex.missing, uuids)
+    log.info('have %s: %d asked, %d missing, %.3fs', body.get('type'), len(uuids), len(miss), time.monotonic() - t0)
+    return {'missing': miss}
+
+
+def _have_body(raw, enc):
+    if enc not in ('', 'identity', 'gzip'):
+        raise spool.BadBody(415, f'unsupported Content-Encoding {enc}')
+    if enc == 'gzip' or raw[:2] == b'\x1f\x8b':
+        import zlib
+        d = zlib.decompressobj(16 + zlib.MAX_WBITS)
+        try:
+            raw = d.decompress(raw, config.MAX_BODY)
+        except zlib.error:
+            raise spool.BadBody(400, 'body is not valid gzip')
+    try:
+        return json.loads(raw)
+    except (ValueError, UnicodeDecodeError):
+        raise spool.BadBody(400, 'body is not valid JSON')
 
 
 # ---------------------------------------------------------------- reads

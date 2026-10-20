@@ -7,7 +7,7 @@ next start. Spool files are named <time>-<seq>.<kind>.<gz|json>, so sorting them
 """
 import itertools, json, logging, os, shutil, threading, time, zlib
 
-from . import config, db, ingest
+from . import config, db, idindex, ingest
 
 log = logging.getLogger('healthsync')
 DIR = os.path.join(config.DATA_DIR, 'spool')
@@ -21,6 +21,7 @@ _lock = threading.Lock()
 _queued = {}           # spool file name -> record count
 _results = {}          # spool file name -> result, for ?wait=1
 _done = threading.Condition(_lock)
+_keys = {}             # spool file name -> record id keys, for /have
 _wake = threading.Event()
 
 
@@ -84,6 +85,9 @@ def put(kind, raw, enc):
         os.close(dfd)
     with _lock:
         _queued[name] = len(recs)
+    if kind != 'deletions':   # /have counts queued records as held
+        _keys[name] = idindex.keys_of(recs)
+        idindex.add_queued(_keys[name])
     _wake.set()
     # accepted = records taken on; whether each was new or a duplicate is only known once written (see ?wait=1).
     return name, recs, dict(accepted=good, duplicates=0, rejected=rejected, queued=True), (t1 - t0, time.monotonic() - t1)
@@ -153,6 +157,10 @@ def _write_group():
         _caught_up.clear()   # new WAL pages since the last checkpoint
         if _wal_size() > WAL_CHECKPOINT:
             _ckpt_wake.set()
+    if kind != 'deletions':   # now stored: move their ids from queued to stored for /have
+        for name, recs in group:
+            idindex.add_stored([r.get('uuid') for r in recs if isinstance(r, dict)])
+            idindex.remove_queued(_keys.pop(name, []))
     for name, _ in group:
         os.remove(os.path.join(DIR, name))
     acc = sum(r['accepted'] for r in results.values())
@@ -248,6 +256,24 @@ def _run():
         _wake.clear()
 
 
+def _index_leftovers(names):
+    """Register the ids of uploads spooled before the restart, so /have counts them as held."""
+    t, n = time.monotonic(), 0
+    for name in names:
+        if name.split('.')[1] == 'deletions':
+            continue
+        try:
+            with open(os.path.join(DIR, name), 'rb') as f:
+                keys = idindex.keys_of(decode(f.read(), name.endswith('.gz')))
+        except (OSError, BadBody):
+            continue   # already written, or unreadable
+        _keys[name] = keys
+        idindex.add_queued(keys)
+        n += len(keys)
+    if names:
+        log.info('queued uploads indexed for /have: %d records in %.1fs', n, time.monotonic() - t)
+
+
 def start():
     os.makedirs(FAILED, exist_ok=True)
     for f in os.listdir(DIR):
@@ -267,4 +293,5 @@ def start():
     if leftover:
         log.info('%d spooled uploads from before the restart will be written now', len(leftover))
     threading.Thread(target=_run, name='spool-writer', daemon=True).start()
+    idindex.start(prepare=lambda: _index_leftovers(leftover))
     threading.Thread(target=_checkpointer, name='checkpointer', daemon=True).start()
