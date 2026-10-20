@@ -28,8 +28,8 @@ services:
       HEALTHSYNC_SETUP_PAGE: "1"
       HEALTHSYNC_HOME_TZ: Europe/London
       HEALTHSYNC_PUBLIC_URL: http://umbrel.local:8787
-      HEALTHSYNC_CODE_URL: https://codeload.github.com/GCarterH/umbrel-apps/tar.gz/b345724a0f984f8a52c2923def28da5f5483b742
-      HEALTHSYNC_CODE_SHA256: 33d0eac1426883526320d78c27a1738065fd5560458ae4a6677c8e0ce500e3ad
+      HEALTHSYNC_CODE_URL: https://codeload.github.com/GCarterH/umbrel-apps/tar.gz/f540272e0237ed64d702dc039e03f8f6452587f2
+      HEALTHSYNC_CODE_SHA256: f38115c8c0e02aa60e9e462a21f540051cbe62f1caa6b805e926d546f92cc2c1
     command:
       - python
       - -c
