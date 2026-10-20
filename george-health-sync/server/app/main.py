@@ -105,7 +105,9 @@ def status_data():
     wal = config.DB_PATH + '-wal'
     size = pages + (os.path.getsize(wal) if os.path.exists(wal) else 0)
     q_uploads, q_records = spool.queued()
+    received, dups = int(db.get_meta(con, 'received_total', 0)), int(db.get_meta(con, 'duplicates_total', 0))
     return dict(version=__version__, total_records=sum(t['count'] for t in types.values()), queued_uploads=q_uploads, queued_records=q_records,
+                received_records=received, duplicate_records=dups, counted_since='0.1.9',
                 workout_hr_points=hr,
                 newest=max((t['newest'] for n, t in types.items() if t['newest'] and not n.startswith(PROFILE)), default=None), last_upload=last,
                 database_bytes=size, database_mb=round(size / 1e6, 1), types=types)
@@ -239,7 +241,8 @@ button{{font:inherit;padding:.4rem .9rem}} small{{color:#5a6b70}}
 <p>In the iPhone app go to <b>Settings</b> and scan this code, or type the address and token.</p>
 <div class="qr">{qr}</div>
 <p>Server address: <code>{html.escape(url)}</code><br>Token: <code>{html.escape(STATE['token'])}</code></p>
-<p><small>Records stored: {s['total_records']:,} &middot; newest: {html.escape(s['newest'] or 'none yet')} &middot;
+<p><small>Records stored: {s['total_records']:,} &middot; waiting to be written: {s['queued_records']:,} &middot;
+duplicates skipped (since 0.1.9): {s['duplicate_records']:,} &middot; newest: {html.escape(s['newest'] or 'none yet')} &middot;
 last upload: {html.escape(s['last_upload'] or 'none yet')} &middot; database: {s['database_mb']} MB</small></p>
 <form method="post" action="/setup/rotate" onsubmit="return confirm('Make a new token? The phone stops syncing until you scan the new code.')">
 <button>Make a new token</button></form>

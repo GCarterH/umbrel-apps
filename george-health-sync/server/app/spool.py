@@ -140,6 +140,10 @@ def _write_group():
         try:
             for name, recs in group:   # one call per upload so each gets its own counts
                 results[name] = ingest.STORE[kind](con, recs)
+            # Running totals since 0.1.9, committed with the records: every record received, and those already stored.
+            if kind != 'deletions':
+                db.add_meta(con, 'received_total', sum(len(recs) for _, recs in group))
+                db.add_meta(con, 'duplicates_total', sum(r['duplicates'] for r in results.values()))
             t1 = time.monotonic()
             con.commit()
         except Exception:

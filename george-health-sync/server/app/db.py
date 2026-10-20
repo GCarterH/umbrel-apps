@@ -145,6 +145,11 @@ def set_meta(con, key, value):
     con.execute('INSERT INTO meta (key, value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value = excluded.value', (key, str(value)))
 
 
+def add_meta(con, key, n):
+    con.execute('INSERT INTO meta (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = CAST(value AS INTEGER) + excluded.value',
+                (key, int(n)))
+
+
 def get_meta(con, key, default=None):
     r = con.execute('SELECT value FROM meta WHERE key = ?', (key,)).fetchone()
     return r[0] if r else default
