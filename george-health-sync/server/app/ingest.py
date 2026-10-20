@@ -3,7 +3,7 @@
 Duplicates are records whose uuid is already stored; they are skipped, so resending is always safe.
 """
 import json, math
-from . import db, timeutil as T
+from . import dailycache, db, timeutil as T
 from .config import HOME_TZ
 
 SLEEP = 'HKCategoryTypeIdentifierSleepAnalysis'
@@ -148,6 +148,8 @@ def _store(con, records, parse, table, cols, stat_type, time_col='start_utc', af
         for typ, (n, d, newest) in stats.items():
             db.bump(con, typ, n, d, newest)
         db.set_meta(con, 'last_upload', received)
+        if table != 'ecgs':   # ECGs aren't in the daily summary
+            dailycache.mark(con, [row[time_col] for row, r in new])
     return len(new), duplicates, rejected
 
 
@@ -268,15 +270,19 @@ def deletions(con, records):
         for table, type_col in DELETABLE:
             if table == 'samples':
                 rid = sample_rowid(con, uid)
-                hit = rid and con.execute('SELECT type FROM samples WHERE rowid = ? AND deleted_at IS NULL', (rid,)).fetchone()
+                hit = rid and con.execute('SELECT type, start_utc FROM samples WHERE rowid = ? AND deleted_at IS NULL', (rid,)).fetchone()
                 if hit:
                     con.execute('UPDATE samples SET deleted_at = ? WHERE rowid = ?', (now, rid))
                     db.bump(con, hit[0], -1, 1)
+                    dailycache.mark(con, [hit[1]])
                 continue
-            hit = con.execute(f'SELECT {type_col or "NULL"} FROM {table} WHERE uuid = ? AND deleted_at IS NULL', (uid,)).fetchone()
+            tcol = 'time_utc' if table == 'ecgs' else 'start_utc'
+            hit = con.execute(f'SELECT {type_col or "NULL"}, {tcol} FROM {table} WHERE uuid = ? AND deleted_at IS NULL', (uid,)).fetchone()
             if hit:
                 con.execute(f'UPDATE {table} SET deleted_at = ? WHERE uuid = ?', (now, uid))
                 db.bump(con, hit[0] or STAT_TYPE[table], -1, 1)
+                if table != 'ecgs':
+                    dailycache.mark(con, [hit[1]])
     return dict(accepted=accepted, duplicates=duplicates, rejected=rejected)
 
 

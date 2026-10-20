@@ -102,6 +102,12 @@ CREATE TABLE IF NOT EXISTS type_stats (
     newest TEXT
 );
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT);
+
+-- Saved daily summary for the dashboard and /daily (dailycache.py): one row per local date, as JSON.
+CREATE TABLE IF NOT EXISTS daily_cache (date TEXT PRIMARY KEY, row_json TEXT NOT NULL);
+-- Days to recalculate. gen is when a day was last marked: a day is only unmarked once the numbers calculated after
+-- that are saved, so it is never missing from /daily in between.
+CREATE TABLE IF NOT EXISTS daily_dirty (date TEXT PRIMARY KEY, gen INTEGER NOT NULL DEFAULT 0);
 """
 
 # Names /status uses for the tables that aren't per-type samples.

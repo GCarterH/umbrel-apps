@@ -8,7 +8,7 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, StreamingResponse
 
-from . import __version__, config, daily as D, db, ingest, spool, timeutil as T
+from . import __version__, config, daily as D, dailycache, db, ingest, spool, timeutil as T
 
 log = logging.getLogger('healthsync')
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(message)s')
@@ -22,6 +22,7 @@ STATE = {}
 def startup():
     db.init().close()   # first start after an upgrade counts the existing records once (can take a minute)
     spool.start()
+    dailycache.start()
     STATE['token'] = config.get_token()
     url = config.PUBLIC_URL or 'http://<this-machine>:8787'
     payload = config_link(url, STATE['token'])
@@ -148,7 +149,7 @@ def get_daily(request: Request, from_: str = Query(None, alias='from'), to: str 
     t = _date(to, 'to') if to else today.isoformat()
     if f > t:
         raise HTTPException(400, 'from is after to')
-    rows = D.daily(db.reader(), f, t)
+    rows = dailycache.rows(db.reader(), f, t)
     return dict(columns=D.COLUMNS, rows=rows)
 
 
@@ -221,7 +222,33 @@ def get_export(request: Request, from_: str = Query(None, alias='from'), to: str
 
 
 # ---------------------------------------------------------------- setup page (token + QR)
+STATIC = os.path.join(os.path.dirname(__file__), 'static')
+
+
 @app.get('/', response_class=HTMLResponse)
+def dashboard_page():
+    """The dashboard (static/dashboard.html). Like the setup page, it relies on the Umbrel login in front of it."""
+    if not config.SETUP_PAGE:
+        return HTMLResponse('<p>Health Sync server {} is running. The dashboard and setup page are turned off.</p>'.format(__version__))
+    return FileResponse(os.path.join(STATIC, 'dashboard.html'), media_type='text/html', headers={'Cache-Control': 'no-cache'})
+
+
+@app.get('/dashboard/data')
+def dashboard_data():
+    """Every saved day from the daily summary, as compact arrays, plus a little status. Saved days only: days still
+    being recalculated are left out rather than worked out on the spot, so the page always loads quickly."""
+    if not config.SETUP_PAGE:
+        raise HTTPException(404)
+    con = db.reader()
+    rows = [json.loads(r[0]) for r in con.execute('SELECT row_json FROM daily_cache ORDER BY date')]
+    s = status_data()
+    return dict(version=__version__, last_upload=s['last_upload'], total_records=s['total_records'],
+                queued_records=s['queued_records'], summary_ready=dailycache.ready(con), days_to_prepare=dailycache.pending(con),
+                home_tz=config.HOME_TZ,
+                columns=D.COLUMNS, rows=[[r.get(c) for c in D.COLUMNS] for r in rows])
+
+
+@app.get('/connect', response_class=HTMLResponse)
 def setup_page(request: Request):
     if not config.SETUP_PAGE:
         return HTMLResponse('<p>Health Sync server {} is running. The setup page is turned off; the token is in the server log.</p>'.format(__version__))
@@ -230,13 +257,14 @@ def setup_page(request: Request):
     qr = segno.make(link, error='m').svg_inline(scale=6, border=2, dark='#1F4E5A')
     s = status_data()
     return HTMLResponse(f"""<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Health Sync</title><link rel="icon" href="/icon.png"><link rel="apple-touch-icon" href="/icon.png"><style>
+<title>Connect a phone</title><link rel="icon" href="/icon.png"><link rel="apple-touch-icon" href="/icon.png"><style>
 body{{font-family:-apple-system,system-ui,sans-serif;max-width:640px;margin:2rem auto;padding:0 16px;color:#1d2a2e;background:#fff}}
 code{{background:#eef3f4;padding:.2rem .4rem;border-radius:4px;word-break:break-all}} .qr svg{{max-width:100%;height:auto}}
 button{{font:inherit;padding:.4rem .9rem}} small{{color:#5a6b70}}
 @media (prefers-color-scheme:dark){{body{{background:#121a1c;color:#e4eef0}} code{{background:#22313a}} .qr{{background:#fff;display:inline-block;padding:8px;border-radius:8px}}}}
 </style></head><body>
-<h1><img src="/icon.png" alt="" width="48" height="48" style="vertical-align:middle;margin-right:.5rem">Health Sync</h1>
+<p><a href="/">&larr; Dashboard</a></p>
+<h1><img src="/icon.png" alt="" width="48" height="48" style="vertical-align:middle;margin-right:.5rem">Connect a phone</h1>
 <p style="margin-top:-.8rem"><small>Version {__version__}</small></p>
 <p>In the iPhone app go to <b>Settings</b> and scan this code, or type the address and token.</p>
 <div class="qr">{qr}</div>
@@ -260,4 +288,4 @@ def setup_rotate():
         raise HTTPException(404)
     STATE['token'] = config.rotate_token()
     log.warning('token rotated from the setup page')
-    return RedirectResponse('/', status_code=303)
+    return RedirectResponse('/connect', status_code=303)

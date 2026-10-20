@@ -1,0 +1,662 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Health Sync</title>
+<link rel="icon" href="/icon.png"><link rel="apple-touch-icon" href="/icon.png">
+<style>
+:root {
+  color-scheme: light;
+  --page: #f4f4f2; --surface: #fcfcfb; --raised: #ffffff; --line: #e4e3df; --grid: #ecebe7;
+  --text: #0b0b0b; --text-2: #52514e; --text-3: #7a7974;
+  --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a; --s4: #eda100; --s5: #e87ba4; --s7: #6250d6;
+  --dot: rgba(42,120,214,.28); --accent-soft: #e6effb; --banner: #fff6e0;
+}
+@media (prefers-color-scheme: dark) {
+  :root:where(:not([data-theme="light"])) {
+    color-scheme: dark;
+    --page: #121211; --surface: #1a1a19; --raised: #222221; --line: #33332f; --grid: #2a2a27;
+    --text: #f0efec; --text-2: #c3c2b7; --text-3: #8f8e86;
+    --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --s5: #d55181; --s7: #9085e9;
+    --dot: rgba(57,135,229,.35); --accent-soft: #1d2a3a; --banner: #2e2716;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --page: #121211; --surface: #1a1a19; --raised: #222221; --line: #33332f; --grid: #2a2a27;
+  --text: #f0efec; --text-2: #c3c2b7; --text-3: #8f8e86;
+  --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --s5: #d55181; --s7: #9085e9;
+  --dot: rgba(57,135,229,.35); --accent-soft: #1d2a3a; --banner: #2e2716;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--page); color: var(--text); font: 15px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; }
+main { max-width: 1100px; margin: 0 auto; padding: 20px 16px 48px; }
+header { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+header img { width: 40px; height: 40px; border-radius: 10px; }
+header h1 { font-size: 22px; margin: 0; }
+header .sub { color: var(--text-2); font-size: 13px; }
+header .spacer { flex: 1; }
+a { color: var(--s1); }
+.connect { font-size: 14px; text-decoration: none; padding: 6px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--raised); }
+.ranges { display: inline-flex; background: var(--raised); border: 1px solid var(--line); border-radius: 10px; padding: 3px; margin: 18px 0 6px; flex-wrap: wrap; }
+.ranges button { font: inherit; font-size: 14px; border: 0; background: none; color: var(--text-2); padding: 6px 14px; border-radius: 7px; cursor: pointer; }
+.ranges button[aria-pressed="true"] { background: var(--accent-soft); color: var(--text); font-weight: 600; }
+.period { color: var(--text-3); font-size: 13px; margin-bottom: 14px; }
+.banner { background: var(--banner); border: 1px solid var(--line); border-radius: 10px; padding: 10px 14px; margin: 12px 0; font-size: 14px; }
+section { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 18px; margin: 14px 0; }
+section h2 { font-size: 17px; margin: 0 0 4px; }
+section .lead { color: var(--text-2); font-size: 14px; margin: 0 0 12px; }
+.changes { margin: 0; padding-left: 20px; }
+.changes li { margin: 6px 0; }
+.cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 12px; }
+.card { text-align: left; font: inherit; color: inherit; background: var(--raised); border: 1px solid var(--line); border-radius: 12px; padding: 14px; cursor: pointer; display: flex; flex-direction: column; gap: 4px; min-height: 150px; }
+.card:hover { border-color: var(--text-3); }
+.card[aria-pressed="true"] { outline: 2px solid var(--s1); outline-offset: -1px; }
+.card .name { color: var(--text-2); font-size: 13px; font-weight: 600; }
+.card .value { font-size: 26px; font-weight: 650; letter-spacing: -.01em; font-variant-numeric: tabular-nums; }
+.card .value small { font-size: 13px; font-weight: 500; color: var(--text-2); margin-left: 4px; }
+.card .cmp { font-size: 13px; color: var(--text-2); }
+.card svg { margin-top: auto; }
+.chart-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.chart-head .spacer { flex: 1; }
+.linkbtn { font: inherit; font-size: 13px; background: none; border: 0; color: var(--s1); cursor: pointer; padding: 0; }
+.chart { position: relative; width: 100%; }
+.chart svg { display: block; width: 100%; }
+.axis text { fill: var(--text-3); font-size: 11px; }
+.legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 13px; color: var(--text-2); margin: 6px 0 4px; }
+.legend i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 6px; vertical-align: -1px; }
+.tip { position: absolute; pointer-events: none; background: var(--raised); color: var(--text); border: 1px solid var(--line); border-radius: 8px; padding: 6px 9px; font-size: 13px; box-shadow: 0 4px 14px rgba(0,0,0,.12); white-space: nowrap; z-index: 2; display: none; }
+.tip b { font-variant-numeric: tabular-nums; }
+.two { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.two section { margin: 0; }
+@media (max-width: 760px) { .two { grid-template-columns: 1fr; } }
+table { border-collapse: collapse; width: 100%; font-size: 13px; font-variant-numeric: tabular-nums; }
+th, td { text-align: left; padding: 5px 8px; border-bottom: 1px solid var(--grid); }
+th { color: var(--text-2); font-weight: 600; }
+.tablewrap { max-height: 320px; overflow: auto; margin-top: 10px; }
+.empty { color: var(--text-3); font-size: 14px; padding: 18px 0; }
+body.loading section, body.loading .two, body.loading .period { display: none; }
+footer { color: var(--text-3); font-size: 12px; margin-top: 24px; }
+</style>
+</head>
+<body class="loading">
+<main>
+  <header>
+    <img src="/icon.png" alt="">
+    <div><h1>Health</h1><div class="sub" id="updated">Loading…</div></div>
+    <div class="spacer"></div>
+    <a class="connect" href="/connect">Connect a phone</a>
+  </header>
+
+  <div class="ranges" role="group" aria-label="Time range">
+    <button data-range="30">30 days</button><button data-range="90">90 days</button>
+    <button data-range="365">12 months</button><button data-range="all">All time</button>
+  </div>
+  <div class="period" id="period"></div>
+  <div id="banner"></div>
+
+  <section id="changes-sec">
+    <h2>What changed</h2>
+    <p class="lead" id="changes-lead"></p>
+    <ul class="changes" id="changes"></ul>
+  </section>
+
+  <section>
+    <h2>At a glance</h2>
+    <p class="lead" id="cards-lead">Daily averages for the period. Tap a card to see its chart.</p>
+    <div class="cards" id="cards"></div>
+  </section>
+
+  <section id="detail-sec">
+    <div class="chart-head"><h2 id="detail-title"></h2><div class="spacer"></div>
+      <button class="linkbtn" id="detail-table-btn">Show as table</button></div>
+    <p class="lead" id="detail-lead"></p>
+    <div class="chart" id="detail"></div>
+    <div class="tablewrap" id="detail-table" hidden></div>
+  </section>
+
+  <section>
+    <h2>Workouts</h2>
+    <p class="lead" id="wk-lead"></p>
+    <div class="legend" id="wk-legend"></div>
+    <div class="chart" id="wk"></div>
+  </section>
+
+  <div class="two">
+    <section>
+      <h2>Sleep</h2>
+      <p class="lead" id="sleep-lead"></p>
+      <div class="chart" id="sleep"></div>
+    </section>
+    <section>
+      <h2>Bedtime</h2>
+      <p class="lead" id="bed-lead"></p>
+      <div class="chart" id="bed"></div>
+    </section>
+  </div>
+
+  <section>
+    <h2>Your week</h2>
+    <p class="lead" id="week-lead"></p>
+    <div class="two" style="gap:24px">
+      <div><div class="legend"><span><i style="background:var(--s1)"></i>Steps a day</span></div><div class="chart" id="wd-steps"></div></div>
+      <div><div class="legend"><span><i style="background:var(--s7)"></i>Sleep a night (by the morning you woke up)</span></div><div class="chart" id="wd-sleep"></div></div>
+    </div>
+  </section>
+
+  <section id="bp-sec">
+    <h2>Blood pressure</h2>
+    <p class="lead" id="bp-lead"></p>
+    <div class="legend"><span><i style="background:var(--s1)"></i>Systolic</span><span><i style="background:var(--s2)"></i>Diastolic</span></div>
+    <div class="chart" id="bp"></div>
+    <div class="tablewrap" id="bp-table"></div>
+  </section>
+
+  <footer id="footer"></footer>
+</main>
+<div class="tip" id="tip"></div>
+
+<script>
+'use strict';
+// ------------------------------------------------------------ data
+let ROWS = [], META = {}, RANGE = '90', METRIC = 'steps';
+const $ = id => document.getElementById(id);
+const MS_DAY = 86400000;
+const toDate = s => { const [y, m, d] = s.split('-').map(Number); return new Date(y, m - 1, d); };
+const iso = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+const addDays = (d, n) => new Date(d.getFullYear(), d.getMonth(), d.getDate() + n);
+const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+const DAYS = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+const fmtDay = d => `${DAYS[d.getDay()]} ${d.getDate()} ${MONTHS[d.getMonth()]} ${d.getFullYear()}`;
+const fmtShort = d => `${d.getDate()} ${MONTHS[d.getMonth()]}`;
+const int = n => Math.round(n).toLocaleString('en-GB');
+const one = n => (Math.round(n * 10) / 10).toLocaleString('en-GB', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+const hm = h => { const m = Math.round(h * 60); return `${Math.floor(m / 60)} h ${String(m % 60).padStart(2, '0')} min`; };
+const clock = h => { let m = Math.round(((h % 24) + 24) % 24 * 60); if (m === 1440) m = 0; return `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`; };
+const mins = n => { n = Math.round(Math.abs(n)); return n >= 60 ? `${Math.floor(n / 60)} h ${String(n % 60).padStart(2, '0')} min` : `${n} min`; };
+const mean = a => a.length ? a.reduce((s, x) => s + x, 0) / a.length : null;
+const sum = a => a.reduce((s, x) => s + x, 0);
+
+// Each measure: column(s) in the daily rows, how to show it, and how to say a change in words.
+// "same" is the change we call "about the same".
+const METRICS = [
+  { k: 'steps', tip: 'steps', name: 'Steps', col: 'Steps', unit: 'a day', show: int, same: 300,
+    say: d => `${int(Math.abs(d))} ${d > 0 ? 'more' : 'fewer'} a day` },
+  { k: 'exercise', tip: 'min', name: 'Exercise', col: 'Exercise min', unit: 'min a day', show: int, same: 3,
+    say: d => `${mins(d)} ${d > 0 ? 'more' : 'less'} a day` },
+  { k: 'active', tip: 'kcal', name: 'Active energy', col: 'Active kcal', unit: 'kcal a day', show: int, same: 30,
+    say: d => `${int(Math.abs(d))} kcal ${d > 0 ? 'more' : 'less'} a day` },
+  { k: 'sleep', tip: '', name: 'Sleep', col: 'Sleep (h)', unit: 'a night', show: hm, same: 10 / 60,
+    say: d => `${mins(d * 60)} ${d > 0 ? 'more' : 'less'} a night` },
+  { k: 'bedtime', tip: '', name: 'Bedtime', col: 'Bedtime (hrs)', unit: 'on average', show: clock, same: 10 / 60, axis: clock,
+    say: d => `${mins(d * 60)} ${d > 0 ? 'later' : 'earlier'}`, tickStep: 1 },
+  { k: 'rhr', tip: 'bpm', name: 'Resting heart rate', col: 'Resting HR', unit: 'bpm', show: int, same: 1,
+    say: d => `${int(Math.abs(d))} bpm ${d > 0 ? 'higher' : 'lower'}` },
+  { k: 'hrv', tip: 'ms', name: 'Heart rate variability', col: 'Sleep HRV (ms)', unit: 'ms, asleep', show: int, same: 3,
+    say: d => `${int(Math.abs(d))} ms ${d > 0 ? 'higher' : 'lower'}` },
+  { k: 'vo2', tip: 'ml/kg/min', name: 'VO₂ max', col: 'VO2 max', unit: 'ml/kg/min', show: one, same: 0.5,
+    say: d => `${one(Math.abs(d))} ${d > 0 ? 'higher' : 'lower'}` },
+  { k: 'weight', tip: 'kg', name: 'Weight', col: 'Weight (kg)', unit: 'kg', show: one, same: 0.3, sparse: true,
+    say: d => `${one(Math.abs(d))} kg ${d > 0 ? 'heavier' : 'lighter'}` },
+  { k: 'fat', tip: '%', name: 'Body fat', col: 'Body fat %', unit: '%', show: one, same: 0.3, sparse: true,
+    say: d => `${one(Math.abs(d))} points ${d > 0 ? 'higher' : 'lower'}` },
+  { k: 'bp', tip: 'mmHg', name: 'Blood pressure', col: 'Systolic BP', col2: 'Diastolic BP', unit: 'mmHg', sparse: true,
+    show: (a, b) => `${int(a)}/${int(b)}`, same: 2,
+    say: (d, d2) => `${int(Math.abs(d))}/${int(Math.abs(d2))} mmHg ${d > 0 ? 'higher' : 'lower'}` },
+];
+const WTYPES = [['walk', 'Walking min', 'Walking', '--s1'], ['cycle', 'Cycling min', 'Cycling', '--s2'],
+                ['strength', 'Strength min', 'Strength', '--s3'], ['run', 'Running min', 'Running', '--s4'],
+                ['other', 'Other workout min', 'Other', '--s5']];
+const css = v => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+
+async function load() {
+  const r = await fetch('/dashboard/data', { cache: 'no-store' });
+  if (!r.ok) throw new Error('HTTP ' + r.status);
+  META = await r.json();
+  ROWS = META.rows.map(a => { const o = {}; META.columns.forEach((c, i) => o[c] = a[i]); o._d = toDate(o.Date); return o; });
+}
+
+// ------------------------------------------------------------ periods
+function lastDay() {
+  // The latest day with data, skipping today: today is only part of a day.
+  const today = iso(new Date());
+  for (let i = ROWS.length - 1; i >= 0; i--) if (ROWS[i].Date < today) return ROWS[i]._d;
+  return ROWS.length ? ROWS[ROWS.length - 1]._d : new Date();
+}
+function periods() {
+  const end = lastDay();
+  if (RANGE === 'all') {
+    const first = ROWS.length ? ROWS[0]._d : end;
+    const curStart = addDays(end, -364), baseEnd = addDays(first, 364);
+    return { start: first, end, cur: [curStart, end], base: [first, baseEnd], baseName: `your first year of data (${first.getFullYear()}–${String(baseEnd.getFullYear()).slice(2)})`, curName: 'the last 12 months' };
+  }
+  const n = Number(RANGE), start = addDays(end, -(n - 1));
+  const names = { 30: 'the previous 30 days', 90: 'the previous 90 days', 365: 'the 12 months before' };
+  return { start, end, cur: [start, end], base: [addDays(start, -n), addDays(start, -1)], baseName: names[n], curName: '' };
+}
+const between = (a, b) => ROWS.filter(r => r._d >= a && r._d <= b);
+const vals = (rows, col) => rows.map(r => r[col]).filter(v => v !== null && v !== undefined);
+
+function compare(m, P) {
+  const cur = between(...P.cur), base = between(...P.base);
+  const c = vals(cur, m.col), b = vals(base, m.col);
+  const days = Math.round((P.cur[1] - P.cur[0]) / MS_DAY) + 1;
+  const need = m.sparse ? 2 : Math.max(3, Math.min(7, Math.floor(days / 4)));
+  const out = { avg: mean(c), n: c.length };
+  if (m.col2) out.avg2 = mean(vals(cur, m.col2));
+  if (c.length >= need && b.length >= need) {
+    out.delta = mean(c) - mean(b);
+    if (m.col2) out.delta2 = out.avg2 - mean(vals(base, m.col2));
+    out.weight = Math.abs(out.delta) / m.same;
+  }
+  return out;
+}
+
+// ------------------------------------------------------------ charts (plain SVG)
+const NS = 'http://www.w3.org/2000/svg';
+function el(tag, attrs, parent) {
+  const e = document.createElementNS(NS, tag);
+  for (const k in attrs) e.setAttribute(k, attrs[k]);
+  if (parent) parent.appendChild(e);
+  return e;
+}
+function niceTicks(lo, hi, n) {
+  if (lo === hi) { lo -= 1; hi += 1; }
+  const span = hi - lo, step0 = span / n, mag = Math.pow(10, Math.floor(Math.log10(step0)));
+  const step = [1, 2, 2.5, 5, 10].map(f => f * mag).find(s => s >= step0) || 10 * mag;
+  const out = [];
+  for (let v = Math.ceil(lo / step) * step; v <= hi + 1e-9; v += step) out.push(+v.toFixed(10));
+  return out;
+}
+function timeTicks(a, b, width) {
+  const days = (b - a) / MS_DAY, want = Math.max(2, Math.floor(width / 90));
+  const out = [];
+  if (days > 800) { for (let y = a.getFullYear() + 1; y <= b.getFullYear(); y++) out.push([new Date(y, 0, 1), String(y)]); }
+  else if (days > 120) { let d = new Date(a.getFullYear(), a.getMonth() + 1, 1); const every = Math.max(1, Math.ceil(days / 30 / want));
+    for (let i = 0; d <= b; i++, d = new Date(d.getFullYear(), d.getMonth() + 1, 1)) if (i % every === 0) out.push([d, d.getMonth() === 0 ? String(d.getFullYear()) : MONTHS[d.getMonth()]]); }
+  else { const every = Math.max(1, Math.ceil(days / want)); for (let d = new Date(a); d <= b; d = addDays(d, every)) out.push([d, fmtShort(d)]); }
+  return out;
+}
+const tip = $('tip');
+function showTip(container, x, y, htmlText) {
+  tip.innerHTML = htmlText; tip.style.display = 'block';
+  const r = container.getBoundingClientRect(), tw = tip.offsetWidth;
+  let left = r.left + window.scrollX + x + 12;
+  if (left + tw > window.scrollX + document.documentElement.clientWidth - 8) left = r.left + window.scrollX + x - tw - 12;
+  tip.style.left = left + 'px'; tip.style.top = (r.top + window.scrollY + y - 10) + 'px';
+}
+const hideTip = () => { tip.style.display = 'none'; };
+
+/** Time chart. series: [{points:[{d, v}], color, kind:'line'|'dots'|'bars', width}], hover(d) -> html. */
+function timeChart(box, { series, a, b, height = 220, yFmt = String, yMin, yMax, hover, tickStep }) {
+  box.innerHTML = '';
+  const W = Math.max(280, box.clientWidth), H = height, L = 46, R = 10, T = 10, B = 24;
+  const all = series.flatMap(s => s.points.map(p => s.stack ? p.top : p.v)).filter(v => v !== null);
+  if (!all.length) { box.innerHTML = '<div class="empty">No data in this period.</div>'; return; }
+  let lo = yMin !== undefined ? yMin : Math.min(...all), hi = yMax !== undefined ? yMax : Math.max(...all);
+  if (yMin === undefined) { const pad = (hi - lo) * 0.1 || 1; lo -= pad; hi += pad; }
+  let ticks;
+  if (tickStep) { const st = Math.max(tickStep, Math.ceil((hi - lo) / 5 / tickStep) * tickStep); ticks = []; for (let v = Math.ceil(lo / st) * st; v <= hi + 1e-9; v += st) ticks.push(v); }
+  else ticks = niceTicks(lo, hi, 4);
+  lo = Math.min(lo, ticks[0]); hi = Math.max(hi, ticks[ticks.length - 1]);
+  const t0 = a.getTime(), t1 = b.getTime() + MS_DAY, span = t1 - t0;
+  const X = t => L + (t - t0) / span * (W - L - R), Y = v => T + (1 - (v - lo) / (hi - lo)) * (H - T - B);
+  const svg = el('svg', { viewBox: `0 0 ${W} ${H}`, height: H, role: 'img' }, box);
+  const ax = el('g', { class: 'axis' }, svg);
+  for (const v of ticks) {
+    el('line', { x1: L, x2: W - R, y1: Y(v), y2: Y(v), stroke: css('--grid'), 'stroke-width': 1 }, ax);
+    el('text', { x: L - 6, y: Y(v) + 4, 'text-anchor': 'end' }, ax).textContent = yFmt(v);
+  }
+  for (const [d, label] of timeTicks(a, b, W)) {
+    const x = X(d.getTime()); if (x < L || x > W - R) continue;
+    el('text', { x, y: H - 6, 'text-anchor': 'middle' }, ax).textContent = label;
+  }
+  const slot = (W - L - R) / Math.max(1, span / MS_DAY);
+  for (const s of series) {
+    const pts = s.points.filter(p => p.v !== null && p.v !== undefined);
+    if (s.kind === 'bars') {
+      const bw = Math.max(1, (s.slotDays || 1) * slot - 2);
+      for (const p of pts) {
+        let x = X(p.d.getTime()) + 1, w = bw;
+        if (x < L) { w -= L - x; x = L; }
+        if (x + w > W - R) w = W - R - x;
+        const y0 = Y(s.stack ? p.base : Math.max(lo, 0)), y1 = Y(s.stack ? p.top : p.v);
+        if (Math.abs(y0 - y1) < 0.5 || w < 1) continue;
+        el('rect', { x, y: Math.min(y0, y1), width: w, height: Math.max(1, Math.abs(y0 - y1) - (s.stack ? 2 : 0)), rx: Math.min(4, w / 2), fill: s.color }, svg);
+      }
+    } else if (s.kind === 'dots') {
+      for (const p of pts) el('circle', { cx: X(p.d.getTime() + MS_DAY / 2), cy: Y(p.v), r: s.r || 2.5, fill: s.color }, svg);
+    } else {
+      let dstr = '', prev = null;
+      for (const p of pts) {
+        const t = p.d.getTime() + (s.mid || MS_DAY / 2);
+        const gap = prev !== null && (t - prev) > (s.maxGap || 10 * MS_DAY);
+        dstr += `${dstr && !gap ? 'L' : 'M'}${X(t).toFixed(1)},${Y(p.v).toFixed(1)}`; prev = t;
+      }
+      el('path', { d: dstr, fill: 'none', stroke: s.color, 'stroke-width': s.width || 2, 'stroke-linejoin': 'round', 'stroke-linecap': 'round' }, svg);
+      if (s.markers) for (const p of pts) el('circle', { cx: X(p.d.getTime() + (s.mid || MS_DAY / 2)), cy: Y(p.v), r: 4, fill: s.color, stroke: css('--surface'), 'stroke-width': 2 }, svg);
+    }
+  }
+  if (!hover) return;
+  const cross = el('line', { y1: T, y2: H - B, stroke: css('--text-3'), 'stroke-width': 1, 'stroke-dasharray': '3 3', visibility: 'hidden' }, svg);
+  const hit = el('rect', { x: L, y: 0, width: W - L - R, height: H, fill: 'transparent' }, svg);
+  const move = ev => {
+    const r = svg.getBoundingClientRect(), px = (ev.clientX - r.left) * W / r.width;
+    const d = new Date(t0 + (px - L) / (W - L - R) * span);
+    const res = hover(new Date(d.getFullYear(), d.getMonth(), d.getDate()));
+    if (!res) { cross.setAttribute('visibility', 'hidden'); hideTip(); return; }
+    const cx = X(res.t || d.getTime());
+    cross.setAttribute('x1', cx); cross.setAttribute('x2', cx); cross.setAttribute('visibility', 'visible');
+    showTip(box, cx * r.width / W, (ev.clientY - r.top), res.html);
+  };
+  hit.addEventListener('pointermove', move); hit.addEventListener('pointerdown', move);
+  hit.addEventListener('pointerleave', () => { cross.setAttribute('visibility', 'hidden'); hideTip(); });
+}
+
+/** Simple vertical bar chart over categories (weekdays). */
+function catBars(box, { labels, values, color, fmt, height = 170 }) {
+  box.innerHTML = '';
+  if (!values.some(v => v !== null)) { box.innerHTML = '<div class="empty">Not enough data yet.</div>'; return; }
+  const W = Math.max(260, box.clientWidth), H = height, L = 8, R = 8, T = 22, B = 22;
+  const hi = Math.max(...values.filter(v => v !== null)) || 1;
+  const svg = el('svg', { viewBox: `0 0 ${W} ${H}`, height: H, role: 'img' }, box);
+  const slot = (W - L - R) / labels.length, bw = Math.min(46, slot - 8);
+  labels.forEach((lab, i) => {
+    const v = values[i], x = L + i * slot + (slot - bw) / 2;
+    el('text', { x: x + bw / 2, y: H - 6, 'text-anchor': 'middle', class: 'axis', fill: css('--text-3'), 'font-size': 11 }, svg).textContent = lab;
+    if (v === null) return;
+    const h = (v / hi) * (H - T - B), y = H - B - h;
+    el('rect', { x, y, width: bw, height: Math.max(1, h), rx: 4, fill: color }, svg);
+    el('text', { x: x + bw / 2, y: y - 5, 'text-anchor': 'middle', fill: css('--text-2'), 'font-size': 11 }, svg).textContent = fmt(v);
+  });
+}
+
+function sparkline(m, P) {
+  const rows = between(P.start, P.end);
+  const days = (P.end - P.start) / MS_DAY;
+  const pts = bucket(rows, m.col, days > 400 ? 'month' : days > 100 ? 'week' : 'day').filter(p => p.v !== null);
+  const W = 200, H = 38;
+  const svg = document.createElementNS(NS, 'svg');
+  svg.setAttribute('viewBox', `0 0 ${W} ${H}`); svg.setAttribute('height', H); svg.setAttribute('width', '100%');
+  svg.setAttribute('preserveAspectRatio', 'none'); svg.setAttribute('aria-hidden', 'true');
+  if (pts.length < 2) return svg;
+  const vs = pts.map(p => p.v), lo = Math.min(...vs), hi = Math.max(...vs), t0 = P.start.getTime(), t1 = P.end.getTime() + MS_DAY;
+  const d = pts.map((p, i) => `${i ? 'L' : 'M'}${((p.d.getTime() - t0) / (t1 - t0) * W).toFixed(1)},${(H - 3 - ((p.v - lo) / ((hi - lo) || 1)) * (H - 6)).toFixed(1)}`).join('');
+  el('path', { d, fill: 'none', stroke: css('--s1'), 'stroke-width': 2, 'vector-effect': 'non-scaling-stroke', 'stroke-linejoin': 'round' }, svg);
+  return svg;
+}
+
+/** Group daily rows into day/week/month points: mean (or sum) of a column. */
+function bucket(rows, col, size, agg = 'mean') {
+  const keyOf = d => size === 'month' ? new Date(d.getFullYear(), d.getMonth(), 1)
+    : size === 'week' ? addDays(d, -((d.getDay() + 6) % 7)) : d;
+  const groups = new Map();
+  for (const r of rows) {
+    const k = keyOf(r._d).getTime();
+    if (!groups.has(k)) groups.set(k, []);
+    const v = r[col]; if (v !== null && v !== undefined) groups.get(k).push(v);
+  }
+  return [...groups.entries()].sort((x, y) => x[0] - y[0]).map(([k, a]) => ({ d: new Date(k), v: a.length ? (agg === 'sum' ? sum(a) : mean(a)) : null, n: a.length }));
+}
+/** The row with a value for col closest to date d (for sparse readings such as weigh-ins). */
+function nearest(rows, d, col) {
+  let best = null, bd = Infinity;
+  for (const r of rows) { if (r[col] === null || r[col] === undefined) continue; const x = Math.abs(r._d - d); if (x < bd) { bd = x; best = r; } }
+  return best;
+}
+function rolling(rows, col, window) {
+  const out = [];
+  for (let i = 0; i < rows.length; i++) {
+    const from = addDays(rows[i]._d, -(window - 1));
+    const a = []; for (let j = i; j >= 0 && rows[j]._d >= from; j--) if (rows[j][col] !== null && rows[j][col] !== undefined) a.push(rows[j][col]);
+    out.push({ d: rows[i]._d, v: a.length >= Math.min(3, window) ? mean(a) : null });
+  }
+  return out;
+}
+const sizeFor = P => { const days = (P.end - P.start) / MS_DAY; return days > 800 ? 'month' : days > 120 ? 'week' : 'day'; };
+const sizeWord = { day: 'day', week: 'week', month: 'month' };
+
+// ------------------------------------------------------------ sections
+function renderHeader() {
+  const last = META.last_upload ? new Date(META.last_upload) : null;
+  $('updated').textContent = last ? `Last sync ${fmtDay(last)}, ${String(last.getHours()).padStart(2, '0')}:${String(last.getMinutes()).padStart(2, '0')}` : 'No data yet';
+  const P = periods();
+  $('period').textContent = ROWS.length ? `${fmtDay(P.start)} to ${fmtDay(P.end)}` : '';
+  const notes = [];
+  if (!META.summary_ready) notes.push('Preparing your daily summary for the first time. This takes a few minutes; the page updates by itself.');
+  else if (META.days_to_prepare > 0) notes.push(`Still preparing the daily summary: ${int(META.days_to_prepare)} days to go. Charts fill in as it goes, and the page updates by itself.`);
+  if (META.queued_records > 0) notes.push(`${int(META.queued_records)} records from the phone are still being saved.`);
+  $('banner').innerHTML = notes.map(n => `<div class="banner">${n}</div>`).join('');
+  $('footer').textContent = `Everything on this page is worked out on your Umbrel; nothing leaves it. Health Sync ${META.version} · ${int(META.total_records)} records stored.`;
+}
+
+function renderChanges(P, results) {
+  const vs = P.baseName;
+  $('changes-lead').textContent = RANGE === 'all' ? `The last 12 months compared with ${vs}.` : `Compared with ${vs}.`;
+  const items = [];
+  const moved = METRICS.map(m => ({ m, r: results[m.k] })).filter(x => x.r.weight >= 2).sort((a, b) => b.r.weight - a.r.weight).slice(0, 4);
+  for (const { m, r } of moved) items.push(`<b>${esc(m.name)}</b>: ${esc(m.say(r.delta, r.delta2))}.`);
+  const steady = METRICS.filter(m => results[m.k].weight !== undefined && results[m.k].weight < 1).map(m => m.name.toLowerCase());
+  if (steady.length) items.push(`<b>About the same</b>: ${esc(listWords(steady.slice(0, 5)))}.`);
+  const cur = between(...P.cur);
+  const best = cur.filter(r => r.Steps).sort((a, b) => b.Steps - a.Steps)[0];
+  if (best) items.push(`<b>Most active day</b>: ${fmtDay(best._d)}, ${int(best.Steps)} steps${best.Where ? ` (in ${esc(best.Where)})` : ''}.`);
+  const wk = workoutTotals(cur);
+  if (wk.count) items.push(`<b>Workouts</b>: ${int(wk.count)}, ${mins(wk.total)} in total${wk.top ? `, mostly ${wk.top.toLowerCase()}` : ''}.`);
+  const places = {}; cur.forEach(r => { if (r.Where) places[r.Where] = (places[r.Where] || 0) + 1; });
+  for (const [p, n] of Object.entries(places)) items.push(`<b>Away</b>: ${n} day${n > 1 ? 's' : ''} in ${esc(p)}.`);
+  $('changes').innerHTML = items.length ? items.map(t => `<li>${t}</li>`).join('') : '<li>Not enough data in this period yet.</li>';
+}
+const cap = s => s.charAt(0).toUpperCase() + s.slice(1);
+const listWords = a => a.length < 2 ? a.join('') : a.slice(0, -1).join(', ') + ' and ' + a[a.length - 1];
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+function workoutTotals(rows) {
+  const t = {}; let count = 0;
+  for (const r of rows) { count += r.Workouts || 0; for (const [, col, name] of WTYPES) t[name] = (t[name] || 0) + (r[col] || 0); }
+  const total = sum(Object.values(t)); const top = Object.entries(t).sort((a, b) => b[1] - a[1])[0];
+  return { count, total, top: top && top[1] > total / 3 ? top[0] : null, byType: t };
+}
+
+function renderCards(P, results) {
+  const box = $('cards'); box.innerHTML = '';
+  $('cards-lead').textContent = RANGE === 'all' ? 'Daily averages for the last 12 months. Tap a card to see its chart over all your years.'
+    : 'Daily averages for the period. Tap a card to see its chart.';
+  for (const m of METRICS) {
+    const r = results[m.k];
+    if (r.avg === null) continue;
+    const b = document.createElement('button');
+    b.className = 'card'; b.setAttribute('aria-pressed', String(m.k === METRIC));
+    let value = m.col2 ? m.show(r.avg, r.avg2) : m.show(r.avg), note = '';
+    if (m.sparse) {   // weigh-ins and readings are occasional: show the latest one, and its date
+      const last = between(P.start, P.end).filter(x => x[m.col] !== null && x[m.col] !== undefined).pop();
+      if (last) { value = m.col2 ? m.show(last[m.col], last[m.col2]) : m.show(last[m.col]); note = `Latest, ${fmtShort(last._d)}. `; }
+    }
+    let cmp;
+    if (r.delta === undefined) cmp = 'Not enough data to compare.';
+    else if (r.weight < 1) cmp = `About the same as ${P.baseName}.`;
+    else cmp = `${cap(m.say(r.delta, r.delta2))} than ${P.baseName}.`;
+    b.innerHTML = `<span class="name">${esc(m.name)}</span><span class="value">${esc(value)}<small>${esc(m.unit)}</small></span><span class="cmp">${esc(note + cmp)}</span>`;
+    b.appendChild(sparkline(m, P));
+    b.addEventListener('click', () => { METRIC = m.k; renderAll(false); $('detail-sec').scrollIntoView({ behavior: 'smooth', block: 'start' }); });
+    box.appendChild(b);
+  }
+  if (!box.children.length) box.innerHTML = '<div class="empty">No data in this period yet.</div>';
+}
+
+function renderDetail(P) {
+  const m = METRICS.find(x => x.k === METRIC) || METRICS[0];
+  const rows = between(P.start, P.end), size = sizeFor(P);
+  const fmt = m.axis || (v => m.show === one ? one(v) : int(v));
+  $('detail-title').textContent = m.name;
+  const series = [];
+  let lead;
+  if (m.col2) {
+    series.push({ points: rows.map(r => ({ d: r._d, v: r[m.col] })), kind: 'line', color: css('--s1'), markers: true, maxGap: 40 * MS_DAY });
+    series.push({ points: rows.map(r => ({ d: r._d, v: r[m.col2] })), kind: 'line', color: css('--s2'), markers: true, maxGap: 40 * MS_DAY });
+    lead = 'Each point is the first reading of the day.';
+  } else if (size === 'day') {
+    series.push({ points: rows.map(r => ({ d: r._d, v: r[m.col] })), kind: 'dots', color: css('--dot'), r: 3 });
+    if (m.sparse) series.push({ points: rows.map(r => ({ d: r._d, v: r[m.col] })), kind: 'line', color: css('--s1'), markers: true, maxGap: 60 * MS_DAY });
+    else series.push({ points: rolling(rows, m.col, 7), kind: 'line', color: css('--s1') });
+    lead = m.sparse ? 'Each point is a reading.' : 'Dots are single days; the line is the 7-day average.';
+  } else {
+    const pts = bucket(rows, m.col, size);
+    series.push({ points: pts, kind: 'line', color: css('--s1'), mid: 0, maxGap: (size === 'month' ? 70 : 20) * MS_DAY, markers: pts.length < 60 });
+    lead = `Each point is the average for a ${sizeWord[size]}.`;
+  }
+  $('detail-lead').textContent = lead;
+  const byDate = new Map(rows.map(r => [r.Date, r]));
+  const bucketed = size === 'day' || m.col2 ? null : bucket(rows, m.col, size);
+  timeChart($('detail'), { series, a: P.start, b: P.end, yFmt: fmt, tickStep: m.tickStep, hover: d => {
+    if (bucketed) {
+      const keyT = size === 'month' ? new Date(d.getFullYear(), d.getMonth(), 1).getTime() : addDays(d, -((d.getDay() + 6) % 7)).getTime();
+      const p = bucketed.find(x => x.d.getTime() === keyT); if (!p || p.v === null) return null;
+      const label = size === 'month' ? `${MONTHS[p.d.getMonth()]} ${p.d.getFullYear()}` : `Week of ${fmtShort(p.d)} ${p.d.getFullYear()}`;
+      return { t: p.d.getTime(), html: `${label}<br><b>${esc(m.show(p.v))}</b> ${esc(m.tip)} (average of ${p.n} day${p.n > 1 ? 's' : ''})` };
+    }
+    const r = m.sparse ? nearest(rows, d, m.col) : byDate.get(iso(d)); if (!r || r[m.col] === null || r[m.col] === undefined) return null;
+    d = r._d;
+    return { t: d.getTime() + MS_DAY / 2, html: `${fmtDay(d)}<br><b>${esc(m.col2 ? m.show(r[m.col], r[m.col2]) : m.show(r[m.col]))}</b> ${esc(m.tip)}${r['BP time'] && m.col2 ? ` at ${r['BP time']}` : ''}` };
+  } });
+  // table view
+  const tb = $('detail-table');
+  const tRows = (bucketed || rows.map(r => ({ d: r._d, v: r[m.col], v2: m.col2 ? r[m.col2] : null }))).filter(p => p.v !== null && p.v !== undefined).reverse();
+  tb.innerHTML = `<table><tr><th>${bucketed ? (size === 'month' ? 'Month' : 'Week of') : 'Date'}</th><th>${esc(m.name)} (${esc(m.unit)})</th></tr>` +
+    tRows.map(p => `<tr><td>${bucketed && size === 'month' ? `${MONTHS[p.d.getMonth()]} ${p.d.getFullYear()}` : fmtDay(p.d)}</td><td>${esc(m.col2 ? m.show(p.v, p.v2) : m.show(p.v))}</td></tr>`).join('') + '</table>';
+}
+
+function renderWorkouts(P) {
+  const rows = between(P.start, P.end), days = (P.end - P.start) / MS_DAY;
+  const size = days > 120 ? 'month' : 'week';
+  const t = workoutTotals(rows);
+  $('wk-lead').textContent = t.count ? `${int(t.count)} workout${t.count > 1 ? 's' : ''}, ${mins(t.total)} in total. Minutes per ${size}.` : 'No workouts in this period.';
+  $('wk-legend').innerHTML = WTYPES.filter(([, col]) => rows.some(r => r[col])).map(([, , name, v]) => `<span><i style="background:var(${v})"></i>${name}</span>`).join('');
+  const groups = WTYPES.map(([, col]) => bucket(rows, col, size, 'sum'));
+  const series = [], keys = groups[0].map(p => p.d.getTime());
+  const base = new Map(keys.map(k => [k, 0]));
+  WTYPES.forEach(([, , , v], i) => {
+    const pts = groups[i].map(p => { const b0 = base.get(p.d.getTime()) || 0, top = b0 + (p.v || 0); base.set(p.d.getTime(), top); return { d: p.d, v: p.v, base: b0, top }; }).filter(p => p.v);
+    series.push({ points: pts, kind: 'bars', stack: true, color: css(v), slotDays: size === 'month' ? 30 : 7 });
+  });
+  if (!t.count) { $('wk').innerHTML = '<div class="empty">No workouts in this period.</div>'; return; }
+  timeChart($('wk'), { series, a: P.start, b: P.end, yMin: 0, yFmt: v => int(v), height: 200, hover: d => {
+    const keyT = size === 'month' ? new Date(d.getFullYear(), d.getMonth(), 1).getTime() : addDays(d, -((d.getDay() + 6) % 7)).getTime();
+    const parts = WTYPES.map(([, , name], i) => [name, (groups[i].find(p => p.d.getTime() === keyT) || {}).v || 0]).filter(x => x[1]);
+    if (!parts.length) return null;
+    const label = size === 'month' ? `${MONTHS[new Date(keyT).getMonth()]} ${new Date(keyT).getFullYear()}` : `Week of ${fmtShort(new Date(keyT))}`;
+    return { t: keyT, html: `${label}<br>${parts.map(([n, v]) => `${n}: <b>${mins(v)}</b>`).join('<br>')}` };
+  } });
+}
+
+function renderSleep(P) {
+  const rows = between(P.start, P.end), size = sizeFor(P);
+  const nights = rows.filter(r => r['Sleep (h)']);
+  const avg = mean(nights.map(r => r['Sleep (h)']));
+  if (!nights.length) { $('sleep-lead').textContent = 'No sleep recorded in this period.'; $('sleep').innerHTML = ''; $('bed-lead').textContent = ''; $('bed').innerHTML = ''; return; }
+  const deep = mean(vals(nights, 'Deep %')), rem = mean(vals(nights, 'REM %'));
+  $('sleep-lead').textContent = `${hm(avg)} a night on average over ${int(nights.length)} night${nights.length > 1 ? 's' : ''}` + (deep !== null ? `, with ${Math.round(deep)}% deep and ${Math.round(rem)}% REM sleep.` : '.');
+  const byDate = new Map(rows.map(r => [r.Date, r]));
+  if (size === 'day') {
+    timeChart($('sleep'), { series: [{ points: rows.map(r => ({ d: r._d, v: r['Sleep (h)'] })), kind: 'bars', color: css('--s7') }], a: P.start, b: P.end, yMin: 0, yFmt: v => `${v} h`, height: 190,
+      hover: d => { const r = byDate.get(iso(d)); if (!r || !r['Sleep (h)']) return null;
+        return { t: d.getTime() + MS_DAY / 2, html: `Night before ${fmtDay(d)}<br><b>${hm(r['Sleep (h)'])}</b>, asleep at ${clock(r['Bedtime (hrs)'])}${r.Awakenings !== null ? `<br>${r.Awakenings} times awake` : ''}` }; } });
+  } else {
+    const pts = bucket(rows, 'Sleep (h)', size);
+    timeChart($('sleep'), { series: [{ points: pts, kind: 'line', color: css('--s7'), mid: 0, maxGap: 70 * MS_DAY, markers: pts.length < 60 }], a: P.start, b: P.end, yFmt: v => `${v} h`, height: 190,
+      hover: d => { const keyT = size === 'month' ? new Date(d.getFullYear(), d.getMonth(), 1).getTime() : addDays(d, -((d.getDay() + 6) % 7)).getTime();
+        const p = pts.find(x => x.d.getTime() === keyT); if (!p || p.v === null) return null; return { t: keyT, html: `${size === 'month' ? `${MONTHS[p.d.getMonth()]} ${p.d.getFullYear()}` : `Week of ${fmtShort(p.d)}`}<br><b>${hm(p.v)}</b> a night` }; } });
+  }
+  // bedtime: when you fell asleep, and how much it varies
+  const beds = vals(nights, 'Bedtime (hrs)');
+  const bm = mean(beds), sd = Math.sqrt(mean(beds.map(x => (x - bm) ** 2)));
+  $('bed-lead').textContent = `Usually asleep between ${clock(bm - sd)} and ${clock(bm + sd)}; ${clock(bm)} on average.`;
+  const ys = beds, lo = Math.floor(Math.min(...ys)), hi = Math.ceil(Math.max(...ys));
+  timeChart($('bed'), { series: size === 'day' ? [{ points: rows.map(r => ({ d: r._d, v: r['Bedtime (hrs)'] })), kind: 'dots', color: css('--s7'), r: 3.5 }]
+      : [{ points: bucket(rows, 'Bedtime (hrs)', size), kind: 'line', color: css('--s7'), mid: 0, maxGap: 70 * MS_DAY }],
+    a: P.start, b: P.end, yMin: lo, yMax: hi, yFmt: clock, height: 190, tickStep: 1,
+    hover: d => { const r = byDate.get(iso(d)); if (!r || !r['Bedtime (hrs)']) return null; return { t: d.getTime() + MS_DAY / 2, html: `Night before ${fmtDay(d)}<br>Asleep at <b>${clock(r['Bedtime (hrs)'])}</b>` }; } });
+}
+
+function renderWeek(P) {
+  // Use at least 90 days so each weekday has a dozen or so values.
+  const start = (P.end - P.start) / MS_DAY >= 89 ? P.start : addDays(P.end, -89);
+  const rows = between(start, P.end), order = [1, 2, 3, 4, 5, 6, 0];
+  const by = (col) => order.map(wd => mean(vals(rows.filter(r => r._d.getDay() === wd), col)));
+  const steps = by('Steps'), sleep = by('Sleep (h)');
+  const labels = order.map(i => DAYS[i]);
+  catBars($('wd-steps'), { labels, values: steps, color: css('--s1'), fmt: v => v >= 1000 ? `${one(v / 1000)}k` : int(v) });
+  catBars($('wd-sleep'), { labels, values: sleep, color: css('--s7'), fmt: v => { const m = Math.round(v * 60); return `${Math.floor(m / 60)}h ${String(m % 60).padStart(2, '0')}m`; } });
+  const FULL = ['Sundays', 'Mondays', 'Tuesdays', 'Wednesdays', 'Thursdays', 'Fridays', 'Saturdays'];
+  const sv = steps.map((v, i) => [v, FULL[order[i]]]).filter(x => x[0] !== null).sort((a, b) => b[0] - a[0]);
+  const zv = sleep.map((v, i) => [v, FULL[order[i]]]).filter(x => x[0] !== null).sort((a, b) => b[0] - a[0]);
+  $('week-lead').textContent = sv.length ? `Averages by day of the week since ${fmtDay(start)}. Most steps on ${sv[0][1]}, fewest on ${sv[sv.length - 1][1]}` +
+    (zv.length ? `; most sleep on ${zv[0][1]}, least on ${zv[zv.length - 1][1]}.` : '.') : '';
+}
+
+function renderBP(P) {
+  const all = ROWS.filter(r => r['Systolic BP']);
+  $('bp-sec').hidden = !all.length;
+  if (!all.length) return;
+  const rows = between(P.start, P.end).filter(r => r['Systolic BP']);
+  const show = rows.length ? rows : all.slice(-30);
+  $('bp-lead').textContent = rows.length ? `${rows.length} reading${rows.length > 1 ? 's' : ''} in this period, averaging ${int(mean(vals(rows, 'Systolic BP')))}/${int(mean(vals(rows, 'Diastolic BP')))} mmHg.`
+    : `No readings in this period; showing your latest ${show.length}.`;
+  const a = rows.length ? P.start : show[0]._d, b = rows.length ? P.end : show[show.length - 1]._d;
+  timeChart($('bp'), { series: [
+      { points: show.map(r => ({ d: r._d, v: r['Systolic BP'] })), kind: 'line', color: css('--s1'), markers: true, maxGap: 60 * MS_DAY },
+      { points: show.map(r => ({ d: r._d, v: r['Diastolic BP'] })), kind: 'line', color: css('--s2'), markers: true, maxGap: 60 * MS_DAY }],
+    a, b, yFmt: v => int(v), height: 190,
+    hover: d => { const r = nearest(show, d, 'Systolic BP'); if (!r) return null; d = r._d; return { t: d.getTime() + MS_DAY / 2, html: `${fmtDay(d)}${r['BP time'] ? ` at ${r['BP time']}` : ''}<br><b>${r['Systolic BP']}/${r['Diastolic BP']}</b> mmHg` }; } });
+  $('bp-table').innerHTML = `<table><tr><th>Date</th><th>Time</th><th>Reading (mmHg)</th></tr>` +
+    show.slice().reverse().slice(0, 20).map(r => `<tr><td>${fmtDay(r._d)}</td><td>${r['BP time'] || ''}</td><td>${r['Systolic BP']}/${r['Diastolic BP']}</td></tr>`).join('') + '</table>';
+}
+
+function renderAll(top = true) {
+  hideTip();
+  document.querySelectorAll('.ranges button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.range === RANGE)));
+  renderHeader();
+  if (!ROWS.length) {
+    $('changes').innerHTML = META.summary_ready && !META.days_to_prepare ? '<li>No data yet. Once the phone has synced, your numbers appear here.</li>'
+      : '<li>Your numbers appear here as soon as the first days are ready.</li>';
+    return;
+  }
+  const P = periods();
+  const results = {}; for (const m of METRICS) results[m.k] = compare(m, P);
+  if (top) renderChanges(P, results);
+  renderCards(P, results);
+  renderDetail(P);
+  renderWorkouts(P);
+  renderSleep(P);
+  renderWeek(P);
+  renderBP(P);
+}
+
+// ------------------------------------------------------------ wiring
+try { RANGE = localStorage.getItem('hs-range') || RANGE; METRIC = localStorage.getItem('hs-metric') || METRIC; } catch (e) {}
+document.querySelectorAll('.ranges button').forEach(b => b.addEventListener('click', () => {
+  RANGE = b.dataset.range; try { localStorage.setItem('hs-range', RANGE); } catch (e) {} renderAll();
+}));
+$('detail-table-btn').addEventListener('click', () => {
+  const t = $('detail-table'); t.hidden = !t.hidden; $('detail-table-btn').textContent = t.hidden ? 'Show as table' : 'Hide table';
+});
+const origRender = renderAll;
+renderAll = (top = true) => { try { localStorage.setItem('hs-metric', METRIC); } catch (e) {} origRender(top); };
+let resizeTimer; window.addEventListener('resize', () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(() => renderAll(), 150); });
+matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => renderAll());
+
+async function refresh() {
+  try { await load(); document.body.classList.remove('loading'); renderAll(); }
+  catch (e) { $('updated').textContent = 'Could not load your data (' + e.message + '). Refresh to try again.'; }
+}
+// Reload the data every 5 minutes while the page is open, or every 30 seconds while the summary is being prepared.
+async function loop() {
+  if (document.visibilityState === 'visible') await refresh();
+  const busy = !META.summary_ready || META.days_to_prepare > 0 || META.queued_records > 0;
+  setTimeout(loop, (busy ? 30 : 300) * 1000);
+}
+loop();
+</script>
+</body>
+</html>
