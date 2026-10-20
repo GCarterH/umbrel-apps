@@ -1,5 +1,5 @@
 """HTTP API (spec 5.2). Run with:  uvicorn app.main:app --host 0.0.0.0 --port 8787"""
-import datetime as dt, gzip, hmac, html, json, logging, os, zlib
+import datetime as dt, hmac, html, json, logging, os, time
 from urllib.parse import quote
 
 import segno
@@ -8,9 +8,10 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, StreamingResponse
 
-from . import __version__, config, daily as D, db, ingest, timeutil as T
+from . import __version__, config, daily as D, db, ingest, spool, timeutil as T
 
 log = logging.getLogger('healthsync')
+logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(message)s')
 app = FastAPI(title='Health Sync', version=__version__, docs_url=None, redoc_url=None, openapi_url=None)
 app.add_middleware(GZipMiddleware, minimum_size=2048)
 
@@ -20,6 +21,7 @@ STATE = {}
 @app.on_event('startup')
 def startup():
     db.init().close()   # first start after an upgrade counts the existing records once (can take a minute)
+    spool.start()
     STATE['token'] = config.get_token()
     url = config.PUBLIC_URL or 'http://<this-machine>:8787'
     payload = config_link(url, STATE['token'])
@@ -43,71 +45,52 @@ def auth(request: Request):
         raise HTTPException(401, 'missing or wrong token', headers={'WWW-Authenticate': 'Bearer'})
 
 
-def parse_records(raw, enc):
-    """gzip + JSON -> list of records. Runs in a worker thread, not on the event loop."""
-    if enc == 'gzip' or raw[:2] == b'\x1f\x8b':
-        d = zlib.decompressobj(16 + zlib.MAX_WBITS)
-        try:
-            raw = d.decompress(raw, config.MAX_BODY)
-        except zlib.error:
-            raise HTTPException(400, 'body is not valid gzip')
-        if d.unconsumed_tail:
-            raise HTTPException(413, 'body too large')
-    elif enc not in ('', 'identity'):
-        raise HTTPException(415, f'unsupported Content-Encoding {enc}')
-    if len(raw) > config.MAX_BODY:
-        raise HTTPException(413, 'body too large')
-    try:
-        body = json.loads(raw)
-    except (ValueError, UnicodeDecodeError):
-        raise HTTPException(400, 'body is not valid JSON')
-    recs = body.get('records') if isinstance(body, dict) else body
-    if not isinstance(recs, list):
-        raise HTTPException(400, 'expected {"records": [...]}')
-    return recs
-
-
-def store(fn, raw, enc):
-    recs = parse_records(raw, enc)
-    with db.write_lock:
-        con = db.writer()
-        try:
-            with con:
-                res = fn(con, recs)
-        except Exception:
-            log.exception('%s failed', fn.__name__)
-            raise
-    if res['rejected']:
-        log.warning('%s: rejected %d, e.g. %s', fn.__name__, len(res['rejected']), res['rejected'][0])
-    return res
-
-
-async def upload(request: Request, fn):
-    """Uploads are parsed and written in a worker thread, so the server keeps answering other requests meanwhile."""
+async def upload(request: Request, kind):
+    """Check the upload, spool it to disk and answer; the database write happens in the background (spool.py).
+    ?wait=1 waits for the write and returns the real counts (used by import_exports.py and the tests)."""
     auth(request)
+    t0 = time.monotonic()
     raw = await request.body()
-    return await run_in_threadpool(store, fn, raw, request.headers.get('content-encoding', '').lower().strip())
+    t1 = time.monotonic()
+    try:
+        name, recs, res, (t_check, t_spool) = await run_in_threadpool(
+            spool.put, kind, raw, request.headers.get('content-encoding', '').lower().strip())
+    except spool.BadBody as e:
+        headers = {'Retry-After': '30'} if e.status == 503 else None
+        if e.status == 503:
+            log.info('POST %s: %s', kind, e)
+        raise HTTPException(e.status, str(e), headers=headers)
+    if res['rejected']:
+        log.info('POST %s: rejected %d, e.g. %s', kind, len(res['rejected']), res['rejected'][0])
+    log.info('POST %s: %d records, %d KB: receive %.3fs, check %.3fs, spool %.3fs, total %.3fs', kind, len(recs), len(raw) // 1024,
+             t1 - t0, t_check, t_spool, time.monotonic() - t0)
+    if name and request.query_params.get('wait') in ('1', 'true'):
+        done = await run_in_threadpool(spool.wait, name)
+        if done is None:
+            raise HTTPException(504, 'still writing; the upload is safely queued')
+        res = dict(done, rejected=res['rejected'])
+    return res
 
 
 # ---------------------------------------------------------------- uploads
 @app.post('/api/v1/samples')
 async def post_samples(request: Request):
-    return await upload(request, ingest.samples)
+    return await upload(request, 'samples')
 
 
 @app.post('/api/v1/workouts')
 async def post_workouts(request: Request):
-    return await upload(request, ingest.workouts)
+    return await upload(request, 'workouts')
 
 
 @app.post('/api/v1/ecgs')
 async def post_ecgs(request: Request):
-    return await upload(request, ingest.ecgs)
+    return await upload(request, 'ecgs')
 
 
 @app.post('/api/v1/deletions')
 async def post_deletions(request: Request):
-    return await upload(request, ingest.deletions)
+    return await upload(request, 'deletions')
 
 
 # ---------------------------------------------------------------- reads
@@ -121,7 +104,9 @@ def status_data():
     pages = con.execute('PRAGMA page_count').fetchone()[0] * con.execute('PRAGMA page_size').fetchone()[0]
     wal = config.DB_PATH + '-wal'
     size = pages + (os.path.getsize(wal) if os.path.exists(wal) else 0)
-    return dict(version=__version__, total_records=sum(t['count'] for t in types.values()), workout_hr_points=hr,
+    q_uploads, q_records = spool.queued()
+    return dict(version=__version__, total_records=sum(t['count'] for t in types.values()), queued_uploads=q_uploads, queued_records=q_records,
+                workout_hr_points=hr,
                 newest=max((t['newest'] for n, t in types.items() if t['newest'] and not n.startswith(PROFILE)), default=None), last_upload=last,
                 database_bytes=size, database_mb=round(size / 1e6, 1), types=types)
 

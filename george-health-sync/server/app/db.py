@@ -118,7 +118,9 @@ def connect(path=None, cache_mb=8):
 def writer():
     """The one long-lived connection for writes (use it while holding write_lock). Its cache stays warm."""
     if 'con' not in _writer:
-        _writer['con'] = connect(cache_mb=64)
+        con = connect(cache_mb=160)   # holds the uuid indexes (about 100 MB at 2 million records) so lookups don't hit the disk
+        con.execute('PRAGMA wal_autocheckpoint=16384')   # checkpoint every 64 MB of WAL, not every 4 MB
+        _writer['con'] = con
     return _writer['con']
 
 

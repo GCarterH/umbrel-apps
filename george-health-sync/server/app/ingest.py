@@ -131,23 +131,24 @@ def _sample(r):
     return row
 
 
+def _sleep(r):
+    row = _sample(r)
+    stage = row['label']
+    if not stage and row['value'] is not None:
+        stage = SLEEP_STAGES.get(int(row['value']))
+    if not stage:
+        raise Reject('sleep record has no label')
+    row['stage'] = stage
+    return row
+
+
 def samples(con, records):
     """Quantity/category samples. Sleep goes to sleep_segments, everything else to samples."""
     sleep, other = [], []
     for r in records:
         (sleep if isinstance(r, dict) and r.get('type') == SLEEP else other).append(r)
     a1, d1, r1 = _store(con, other, _sample, 'samples', SAMPLE_COLS, lambda row: row['type'])
-
-    def parse_sleep(r):
-        row = _sample(r)
-        stage = row['label']
-        if not stage and row['value'] is not None:
-            stage = SLEEP_STAGES.get(int(row['value']))
-        if not stage:
-            raise Reject('sleep record has no label')
-        row['stage'] = stage
-        return row
-    a2, d2, r2 = _store(con, sleep, parse_sleep, 'sleep_segments', SLEEP_COLS, lambda row: db.SLEEP_TYPE)
+    a2, d2, r2 = _store(con, sleep, _sleep, 'sleep_segments', SLEEP_COLS, lambda row: db.SLEEP_TYPE)
     return dict(accepted=a1 + a2, duplicates=d1 + d2, rejected=r1 + r2)
 
 
@@ -236,3 +237,29 @@ def deletions(con, records):
                 con.execute(f'UPDATE {table} SET deleted_at = ? WHERE uuid = ?', (now, uid))
                 db.bump(con, hit[0] or STAT_TYPE[table], -1, 1)
     return dict(accepted=accepted, duplicates=duplicates, rejected=rejected)
+
+
+def _deletion(r):
+    if not isinstance(r.get('uuid'), str) or not r.get('uuid'):
+        raise Reject('missing uuid')
+    return r
+
+
+PARSERS = {'samples': lambda r: (_sleep if r.get('type') == SLEEP else _sample)(r), 'workouts': _workout, 'ecgs': _ecg,
+           'deletions': _deletion}
+STORE = {'samples': samples, 'workouts': workouts, 'ecgs': ecgs, 'deletions': deletions}
+
+
+def check(kind, records):
+    """Validate an upload without touching the database: (number of good records, rejected list)."""
+    good, rejected = 0, []
+    for r in records:
+        uid = r.get('uuid') if isinstance(r, dict) else None
+        try:
+            if not isinstance(r, dict):
+                raise Reject('record must be an object')
+            PARSERS[kind](r)
+            good += 1
+        except Reject as e:
+            rejected.append({'uuid': uid if isinstance(uid, str) else None, 'reason': str(e)})
+    return good, rejected
