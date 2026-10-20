@@ -2,7 +2,7 @@ manifestVersion: 1
 id: george-health-sync
 category: files
 name: Health Sync
-version: "0.1.9"
+version: "0.1.10"
 tagline: Keep your Apple Health data on your Umbrel
 description: >-
   Receives Apple Health records from the Health Sync iPhone app and stores them in a SQLite
@@ -23,4 +23,4 @@ defaultUsername: ""
 defaultPassword: ""
 submitter: George Hay
 submission: ""
-releaseNotes: "Fixes slow writing right after a restart (the database is read into memory in one pass first). The Health Sync page now shows records waiting to be written and duplicates skipped, as well as records stored."
+releaseNotes: "Much faster writing on a big database: duplicate checks use a compact ID table that fits in memory, instead of a text index that no longer did. First start rebuilds the samples table once (a few minutes on a hard disk); uploads keep queuing meanwhile."
