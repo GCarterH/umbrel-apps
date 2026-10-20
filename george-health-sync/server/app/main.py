@@ -4,6 +4,7 @@ from urllib.parse import quote
 
 import segno
 from fastapi import FastAPI, HTTPException, Query, Request
+from fastapi.concurrency import run_in_threadpool
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, StreamingResponse
 
@@ -18,7 +19,7 @@ STATE = {}
 
 @app.on_event('startup')
 def startup():
-    db.init().close()
+    db.init().close()   # first start after an upgrade counts the existing records once (can take a minute)
     STATE['token'] = config.get_token()
     url = config.PUBLIC_URL or 'http://<this-machine>:8787'
     payload = config_link(url, STATE['token'])
@@ -42,9 +43,8 @@ def auth(request: Request):
         raise HTTPException(401, 'missing or wrong token', headers={'WWW-Authenticate': 'Bearer'})
 
 
-async def records(request: Request):
-    raw = await request.body()
-    enc = request.headers.get('content-encoding', '').lower().strip()
+def parse_records(raw, enc):
+    """gzip + JSON -> list of records. Runs in a worker thread, not on the event loop."""
     if enc == 'gzip' or raw[:2] == b'\x1f\x8b':
         d = zlib.decompressobj(16 + zlib.MAX_WBITS)
         try:
@@ -67,66 +67,63 @@ async def records(request: Request):
     return recs
 
 
-def store(fn, recs):
+def store(fn, raw, enc):
+    recs = parse_records(raw, enc)
     with db.write_lock:
-        con = db.connect()
+        con = db.writer()
         try:
             with con:
                 res = fn(con, recs)
-        finally:
-            con.close()
+        except Exception:
+            log.exception('%s failed', fn.__name__)
+            raise
     if res['rejected']:
         log.warning('%s: rejected %d, e.g. %s', fn.__name__, len(res['rejected']), res['rejected'][0])
     return res
 
 
+async def upload(request: Request, fn):
+    """Uploads are parsed and written in a worker thread, so the server keeps answering other requests meanwhile."""
+    auth(request)
+    raw = await request.body()
+    return await run_in_threadpool(store, fn, raw, request.headers.get('content-encoding', '').lower().strip())
+
+
 # ---------------------------------------------------------------- uploads
 @app.post('/api/v1/samples')
 async def post_samples(request: Request):
-    auth(request)
-    return store(ingest.samples, await records(request))
+    return await upload(request, ingest.samples)
 
 
 @app.post('/api/v1/workouts')
 async def post_workouts(request: Request):
-    auth(request)
-    return store(ingest.workouts, await records(request))
+    return await upload(request, ingest.workouts)
 
 
 @app.post('/api/v1/ecgs')
 async def post_ecgs(request: Request):
-    auth(request)
-    return store(ingest.ecgs, await records(request))
+    return await upload(request, ingest.ecgs)
 
 
 @app.post('/api/v1/deletions')
 async def post_deletions(request: Request):
-    auth(request)
-    return store(ingest.deletions, await records(request))
+    return await upload(request, ingest.deletions)
 
 
 # ---------------------------------------------------------------- reads
 def status_data():
-    con = db.connect()
-    try:
-        types = {}
-        for r in con.execute('SELECT type, COUNT(*) n, SUM(deleted_at IS NOT NULL) del, MAX(start_utc) newest FROM samples GROUP BY type'):
-            types[r['type']] = dict(count=r['n'] - r['del'], deleted=r['del'], newest=r['newest'])
-        for name, table, col in (('HKCategoryTypeIdentifierSleepAnalysis', 'sleep_segments', 'start_utc'),
-                                 ('HKWorkoutTypeIdentifier', 'workouts', 'start_utc'),
-                                 ('HKDataTypeIdentifierElectrocardiogram', 'ecgs', 'time_utc')):
-            r = con.execute(f'SELECT COUNT(*) n, SUM(deleted_at IS NOT NULL) del, MAX({col}) newest FROM {table}').fetchone()
-            if r['n']:
-                types[name] = dict(count=r['n'] - r['del'], deleted=r['del'], newest=r['newest'])
-        hr = con.execute('SELECT COUNT(*) FROM workout_hr').fetchone()[0]
-        last = max((con.execute(f'SELECT MAX(received_at) FROM {t}').fetchone()[0] or '' for t in ('samples', 'sleep_segments', 'workouts', 'ecgs')),
-                   default='') or None
-    finally:
-        con.close()
-    size = sum(os.path.getsize(config.DB_PATH + s) for s in ('', '-wal') if os.path.exists(config.DB_PATH + s))
+    """From the running totals in type_stats: a few rows, however big the database gets."""
+    con = db.reader()
+    types = {r['type']: dict(count=r['count'], deleted=r['deleted'], newest=r['newest'])
+             for r in con.execute('SELECT type, count, deleted, newest FROM type_stats ORDER BY type') if r['count'] or r['deleted']}
+    hr = int(db.get_meta(con, 'workout_hr_points', 0))
+    last = db.get_meta(con, 'last_upload')
+    pages = con.execute('PRAGMA page_count').fetchone()[0] * con.execute('PRAGMA page_size').fetchone()[0]
+    wal = config.DB_PATH + '-wal'
+    size = pages + (os.path.getsize(wal) if os.path.exists(wal) else 0)
     return dict(version=__version__, total_records=sum(t['count'] for t in types.values()), workout_hr_points=hr,
                 newest=max((t['newest'] for n, t in types.items() if t['newest'] and not n.startswith(PROFILE)), default=None), last_upload=last,
-                database_bytes=size, database_mb=round(size / 1e6, 1), types=dict(sorted(types.items())))
+                database_bytes=size, database_mb=round(size / 1e6, 1), types=types)
 
 
 @app.get('/api/v1/status')
@@ -142,12 +139,9 @@ PROFILE = 'HKCharacteristicTypeIdentifier'   # profile snapshot (sex, date of bi
 def get_profile(request: Request):
     """The latest value the phone sent for each profile characteristic, e.g. date of birth."""
     auth(request)
-    con = db.connect()
-    try:
-        rows = con.execute('SELECT type, label, value, MAX(received_at) received FROM samples WHERE type LIKE ? AND deleted_at IS NULL '
-                           'GROUP BY type', (PROFILE + '%',)).fetchall()
-    finally:
-        con.close()
+    # A range on type (not LIKE) so SQLite uses the (type, start_utc) index instead of reading every row.
+    rows = db.reader().execute('SELECT type, label, value, MAX(received_at) received FROM samples WHERE type >= ? AND type < ? '
+                               'AND deleted_at IS NULL GROUP BY type', (PROFILE, PROFILE[:-1] + chr(ord(PROFILE[-1]) + 1))).fetchall()
     return {r['type'][len(PROFILE):]: dict(value=r['label'] if r['label'] is not None else r['value'], received=r['received']) for r in rows}
 
 
@@ -167,11 +161,7 @@ def get_daily(request: Request, from_: str = Query(None, alias='from'), to: str 
     t = _date(to, 'to') if to else today.isoformat()
     if f > t:
         raise HTTPException(400, 'from is after to')
-    con = db.connect()
-    try:
-        rows = D.daily(con, f, t)
-    finally:
-        con.close()
+    rows = D.daily(db.reader(), f, t)
     return dict(columns=D.COLUMNS, rows=rows)
 
 

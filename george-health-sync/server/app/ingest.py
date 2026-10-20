@@ -3,7 +3,7 @@
 Duplicates are records whose uuid is already stored; they are skipped, so resending is always safe.
 """
 import json, math
-from . import timeutil as T
+from . import db, timeutil as T
 from .config import HOME_TZ
 
 SLEEP = 'HKCategoryTypeIdentifierSleepAnalysis'
@@ -68,9 +68,19 @@ def _deleted(con, uuids):
     return out
 
 
-def _store(con, records, parse, table, cols, after=None):
-    """Shared loop: parse each record, insert new ones, count duplicates and rejections."""
-    accepted = duplicates = 0
+def _existing(con, table, uuids):
+    """The uuids already stored in a table (one indexed lookup per chunk, not per record)."""
+    out, uuids = set(), list(uuids)
+    for i in range(0, len(uuids), 500):
+        chunk = uuids[i:i + 500]
+        out.update(r[0] for r in con.execute(f'SELECT uuid FROM {table} WHERE uuid IN (%s)' % ','.join('?' * len(chunk)), chunk))
+    return out
+
+
+def _store(con, records, parse, table, cols, stat_type, time_col='start_utc', after=None):
+    """Shared path: parse each record, insert the new ones in one go, count duplicates and rejections,
+    and keep type_stats up to date."""
+    duplicates = 0
     rejected, rows, seen = [], [], set()
     for r in records:
         uid = r.get('uuid') if isinstance(r, dict) else None
@@ -86,18 +96,25 @@ def _store(con, records, parse, table, cols, after=None):
             continue
         seen.add(row['uuid'])
         rows.append((row, r))
-    deleted = _deleted(con, seen)
-    received = T.now()
-    sql = f'INSERT OR IGNORE INTO {table} ({",".join(cols)}, received_at, deleted_at) VALUES ({",".join("?" * (len(cols) + 2))})'
-    for row, r in rows:
-        cur = con.execute(sql, [row[c] for c in cols] + [received, deleted.get(row['uuid'])])
-        if cur.rowcount:
-            accepted += 1
+    have = _existing(con, table, seen)
+    new = [(row, r) for row, r in rows if row['uuid'] not in have]
+    duplicates += len(rows) - len(new)
+    if new:
+        deleted = _deleted(con, [row['uuid'] for row, r in new])
+        received = T.now()
+        sql = f'INSERT OR IGNORE INTO {table} ({",".join(cols)}, received_at, deleted_at) VALUES ({",".join("?" * (len(cols) + 2))})'
+        con.executemany(sql, [[row[c] for c in cols] + [received, deleted.get(row['uuid'])] for row, r in new])
+        stats = {}
+        for row, r in new:
+            st = stats.setdefault(stat_type(row), [0, 0, ''])
+            st[1 if row['uuid'] in deleted else 0] += 1
+            st[2] = max(st[2], row[time_col])
             if after:
                 after(con, row, r)
-        else:
-            duplicates += 1
-    return accepted, duplicates, rejected
+        for typ, (n, d, newest) in stats.items():
+            db.bump(con, typ, n, d, newest)
+        db.set_meta(con, 'last_upload', received)
+    return len(new), duplicates, rejected
 
 
 SAMPLE_COLS = ['uuid', 'type', 'start_utc', 'end_utc', 'tz', 'value', 'unit', 'label', 'source', 'device', 'metadata_json']
@@ -119,7 +136,7 @@ def samples(con, records):
     sleep, other = [], []
     for r in records:
         (sleep if isinstance(r, dict) and r.get('type') == SLEEP else other).append(r)
-    a1, d1, r1 = _store(con, other, _sample, 'samples', SAMPLE_COLS)
+    a1, d1, r1 = _store(con, other, _sample, 'samples', SAMPLE_COLS, lambda row: row['type'])
 
     def parse_sleep(r):
         row = _sample(r)
@@ -130,7 +147,7 @@ def samples(con, records):
             raise Reject('sleep record has no label')
         row['stage'] = stage
         return row
-    a2, d2, r2 = _store(con, sleep, parse_sleep, 'sleep_segments', SLEEP_COLS)
+    a2, d2, r2 = _store(con, sleep, parse_sleep, 'sleep_segments', SLEEP_COLS, lambda row: db.SLEEP_TYPE)
     return dict(accepted=a1 + a2, duplicates=d1 + d2, rejected=r1 + r2)
 
 
@@ -170,10 +187,12 @@ def _workout(r):
 def _workout_hr(con, row, r):
     if row['_hr']:
         con.executemany('INSERT INTO workout_hr (workout_uuid, t_utc, bpm) VALUES (?,?,?)', row['_hr'])
+        n = int(db.get_meta(con, 'workout_hr_points', 0)) + len(row['_hr'])
+        db.set_meta(con, 'workout_hr_points', n)
 
 
 def workouts(con, records):
-    a, d, rj = _store(con, records, _workout, 'workouts', WORKOUT_COLS, after=_workout_hr)
+    a, d, rj = _store(con, records, _workout, 'workouts', WORKOUT_COLS, lambda row: db.WORKOUT_TYPE, after=_workout_hr)
     return dict(accepted=a, duplicates=d, rejected=rj)
 
 
@@ -187,8 +206,12 @@ def _ecg(r):
 
 
 def ecgs(con, records):
-    a, d, rj = _store(con, records, _ecg, 'ecgs', ECG_COLS)
+    a, d, rj = _store(con, records, _ecg, 'ecgs', ECG_COLS, lambda row: db.ECG_TYPE, time_col='time_utc')
     return dict(accepted=a, duplicates=d, rejected=rj)
+
+
+DELETABLE = (('samples', 'type'), ('sleep_segments', None), ('workouts', None), ('ecgs', None))
+STAT_TYPE = {'sleep_segments': db.SLEEP_TYPE, 'workouts': db.WORKOUT_TYPE, 'ecgs': db.ECG_TYPE}
 
 
 def deletions(con, records):
@@ -207,6 +230,9 @@ def deletions(con, records):
             accepted += 1
         else:
             duplicates += 1
-        for table in ('samples', 'sleep_segments', 'workouts', 'ecgs'):
-            con.execute(f'UPDATE {table} SET deleted_at = ? WHERE uuid = ? AND deleted_at IS NULL', (now, uid))
+        for table, type_col in DELETABLE:
+            hit = con.execute(f'SELECT {type_col or "NULL"} FROM {table} WHERE uuid = ? AND deleted_at IS NULL', (uid,)).fetchone()
+            if hit:
+                con.execute(f'UPDATE {table} SET deleted_at = ? WHERE uuid = ?', (now, uid))
+                db.bump(con, hit[0] or STAT_TYPE[table], -1, 1)
     return dict(accepted=accepted, duplicates=duplicates, rejected=rejected)
