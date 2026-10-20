@@ -2,7 +2,7 @@ manifestVersion: 1
 id: george-health-sync
 category: files
 name: Health Sync
-version: "0.1.7"
+version: "0.1.8"
 tagline: Keep your Apple Health data on your Umbrel
 description: >-
   Receives Apple Health records from the Health Sync iPhone app and stores them in a SQLite
@@ -23,4 +23,4 @@ defaultUsername: ""
 defaultPassword: ""
 submitter: George Hay
 submission: ""
-releaseNotes: "Uploads are no longer refused while a backlog is being written (only if the disk is nearly full), and background writing is faster on a hard disk: checkpoints run in their own thread and the startup index read is gone."
+releaseNotes: "Fixes slow writing right after a restart: the database is read into memory in one sequential pass first, instead of one random disk read per record. Uploads are only refused when the disk is nearly full."
