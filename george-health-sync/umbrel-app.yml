@@ -2,7 +2,7 @@ manifestVersion: 1
 id: george-health-sync
 category: files
 name: Health Sync
-version: "0.1.4"
+version: "0.1.5"
 tagline: Keep your Apple Health data on your Umbrel
 description: >-
   Receives Apple Health records from the Health Sync iPhone app and stores them in a SQLite
@@ -23,4 +23,4 @@ defaultUsername: ""
 defaultPassword: ""
 submitter: George Hay
 submission: ""
-releaseNotes: "Faster under load: uploads no longer block other requests, and the status check reads running totals instead of counting every record (about 0.01 s instead of 5-15 s). The first start counts existing records once."
+releaseNotes: "Uploads are answered as soon as they are safely saved (about 0.01-0.05 s), and written to the database in the background. The log shows the time each step takes."
