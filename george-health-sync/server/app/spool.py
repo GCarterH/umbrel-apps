@@ -207,8 +207,9 @@ def _checkpointer():
             if idle and frames == done:
                 with db.write_lock:   # nothing is writing: reset the WAL file to zero length
                     con.execute('PRAGMA wal_checkpoint(TRUNCATE)')
-            log.info('checkpoint: %d of %d WAL pages (%.0f MB) copied into the database in %.1fs%s',
-                     done, frames, size / 1e6, took, ', WAL emptied' if idle and frames == done else '')
+            if took >= 1 or frames >= 25000:   # only the big ones; small checkpoints happen every few seconds
+                log.info('checkpoint: %d of %d WAL pages (%.0f MB) copied into the database in %.1fs%s',
+                         done, frames, size / 1e6, took, ', WAL emptied' if idle and frames == done else '')
         except Exception:
             log.exception('checkpoint failed; will try again')
 

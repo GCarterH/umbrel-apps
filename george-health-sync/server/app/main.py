@@ -31,7 +31,8 @@ def startup():
         segno.make(payload, error='m').terminal(compact=True)
     except Exception:   # some log viewers can't show the block characters
         pass
-    print('Setup page: ' + ('on, at /' if config.SETUP_PAGE else 'off (set HEALTHSYNC_SETUP_PAGE=1 to show the token and QR at /)'), flush=True)
+    print('Dashboard at /, setup page (token and QR) at /connect' if config.SETUP_PAGE
+          else 'Dashboard and setup page off (set HEALTHSYNC_SETUP_PAGE=1 to turn them on)', flush=True)
 
 
 def config_link(url, token):

@@ -90,16 +90,20 @@ def sample_rowid(con, uuid):
 
 
 def _existing_samples(con, uuids):
+    """uuids already stored, by their 8-byte key in sample_ids (which stays in the writer's cache).
+
+    The key alone decides: checking each match against the stored row costs a random disk read per duplicate, about
+    50 records/s on the Umbrel's hard disk, which made a re-sent month take hours. Two different uuids share a
+    64-bit key with probability about n^2 / 2^65, roughly 1 in a million across 5 million records; the cost of that
+    would be one record skipped as a duplicate. Deletions still check the stored row (sample_rowid)."""
     keys = {}
     for u in uuids:
         keys.setdefault(db.uid_key(u), []).append(u)
     out, klist = set(), list(keys)
     for i in range(0, len(klist), 500):
         chunk = klist[i:i + 500]
-        for k, rid in con.execute('SELECT k, rid FROM sample_ids WHERE k IN (%s)' % ','.join('?' * len(chunk)), chunk).fetchall():
-            row = con.execute('SELECT uuid FROM samples WHERE rowid = ?', (rid,)).fetchone()
-            if row and row[0] in keys[k]:
-                out.add(row[0])
+        for (k,) in con.execute('SELECT k FROM sample_ids WHERE k IN (%s)' % ','.join('?' * len(chunk)), chunk):
+            out.update(keys[k])
     return out
 
 
