@@ -2,7 +2,7 @@ manifestVersion: 1
 id: george-health-sync
 category: files
 name: Health Sync
-version: "0.2.1"
+version: "0.2.2"
 tagline: Keep your Apple Health data on your Umbrel
 description: >-
   Receives Apple Health records from the Health Sync iPhone app and stores them in a SQLite
@@ -23,4 +23,4 @@ defaultUsername: ""
 defaultPassword: ""
 submitter: George Hay
 submission: ""
-releaseNotes: "Re-sent data is checked much faster (thousands of records a second instead of about 50), so a re-sync no longer holds up new data. Quieter log."
+releaseNotes: "The phone can now ask which records the server already has (POST /api/v1/have) and send only new ones, so a re-sync no longer re-uploads your whole history. Re-sent data is also checked much faster. Quieter log."
