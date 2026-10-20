@@ -209,7 +209,31 @@ def _checkpointer():
             log.exception('checkpoint failed; will try again')
 
 
+def _preload():
+    """Read the database file once, front to back, so its pages are in the OS cache before the first write.
+    On a hard disk the duplicate check otherwise does one random read per record (about 150/s when the cache is cold);
+    a sequential read of the whole file takes seconds. Holds no lock: uploads keep spooling meanwhile."""
+    t, n = time.monotonic(), 0
+    for path in (config.DB_PATH, config.DB_PATH + '-wal'):
+        try:
+            with open(path, 'rb', buffering=0) as f:
+                if hasattr(os, 'posix_fadvise'):
+                    os.posix_fadvise(f.fileno(), 0, 0, os.POSIX_FADV_SEQUENTIAL)
+                while True:
+                    chunk = f.read(8 * 1024 * 1024)
+                    if not chunk:
+                        break
+                    n += len(chunk)
+        except OSError:
+            pass
+    log.info('read the database into memory (%.0f MB) in %.1fs', n / 1e6, time.monotonic() - t)
+
+
 def _run():
+    try:
+        _preload()
+    except Exception:
+        log.exception('preload failed (not fatal)')
     while True:
         try:
             if _write_group():
