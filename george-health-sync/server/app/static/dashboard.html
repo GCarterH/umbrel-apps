@@ -145,6 +145,16 @@ footer { color: var(--text-3); font-size: 12px; margin-top: 24px; }
     </div>
   </section>
 
+  <section id="body-sec">
+    <h2>Body composition</h2>
+    <p class="lead" id="body-lead"></p>
+    <div class="two" style="gap:24px">
+      <div><div class="legend"><span><i style="background:var(--s1)"></i>Weight (kg)</span></div><div class="chart" id="body-w"></div></div>
+      <div><div class="ranges" role="group" aria-label="Measurement" id="body-pick" style="margin:0 0 6px"></div><div class="chart" id="body-f"></div></div>
+    </div>
+    <div class="tablewrap" id="body-table"></div>
+  </section>
+
   <section id="bp-sec">
     <h2>Blood pressure</h2>
     <p class="lead" id="bp-lead"></p>
@@ -160,7 +170,7 @@ footer { color: var(--text-3); font-size: 12px; margin-top: 24px; }
 <script>
 'use strict';
 // ------------------------------------------------------------ data
-let ROWS = [], META = {}, RANGE = '90', METRIC = 'steps';
+let ROWS = [], META = {}, RANGE = '90', METRIC = 'steps', BODY = [], BODY_PICK = 'fat_pct';
 const $ = id => document.getElementById(id);
 const MS_DAY = 86400000;
 const toDate = s => { const [y, m, d] = s.split('-').map(Number); return new Date(y, m - 1, d); };
@@ -215,6 +225,8 @@ async function load() {
   if (!r.ok) throw new Error('HTTP ' + r.status);
   META = await r.json();
   ROWS = META.rows.map(a => { const o = {}; META.columns.forEach((c, i) => o[c] = a[i]); o._d = toDate(o.Date); return o; });
+  BODY = (META.body || []).map(a => { const o = {}; META.body_fields.forEach((c, i) => o[c] = a[i]);
+    const [dpart, tpart] = o.local.split(' '); o._d = toDate(dpart); o._t = tpart; return o; });
 }
 
 // ------------------------------------------------------------ periods
@@ -613,6 +625,56 @@ function renderBP(P) {
     show.slice().reverse().slice(0, 20).map(r => `<tr><td>${fmtDay(r._d)}</td><td>${r['BP time'] || ''}</td><td>${r['Systolic BP']}/${r['Diastolic BP']}</td></tr>`).join('') + '</table>';
 }
 
+const BODY_COLS = [['weight_kg', 'Weight', 'kg', one], ['fat_pct', 'Body fat', '%', one], ['lean_kg', 'Lean mass', 'kg', one],
+  ['muscle_kg', 'Muscle', 'kg', one], ['water_pct', 'Water', '%', one], ['bone_kg', 'Bone', 'kg', v => v.toFixed(2)],
+  ['visceral_fat', 'Visceral fat', '', one], ['bmr_kcal', 'BMR', 'kcal', int], ['protein_pct', 'Protein', '%', one],
+  ['impedance_ohms', 'Impedance', 'Ω', int], ['bmi', 'BMI', '', one]];
+
+function renderBody(P) {
+  $('body-sec').hidden = !BODY.length;
+  if (!BODY.length) return;
+  // Weigh-ins are complete as soon as they're taken, so include today's (the period otherwise ends yesterday).
+  const today = toDate(iso(new Date())), end = P.end < today ? today : P.end;
+  let ws = BODY.filter(w => w._d >= P.start && w._d <= end);
+  const inRange = ws.length > 0;
+  if (!inRange) ws = BODY.slice(-20);
+  const last = ws[ws.length - 1], first = ws[0];
+  const parts = BODY_COLS.filter(([k]) => last[k] !== null && last[k] !== undefined).slice(0, 5)
+    .map(([k, name, unit, f]) => `${name.toLowerCase()} ${f(last[k])}${unit === '%' ? '%' : unit ? ' ' + unit : ''}`);
+  let lead = `Latest weigh-in ${fmtDay(last._d)} at ${last._t}: ${parts.join(', ')}.`;
+  if (inRange && ws.length > 1) {
+    const ch = [];
+    if (first.weight_kg !== null && last.weight_kg !== null) { const d = last.weight_kg - first.weight_kg;
+      ch.push(Math.abs(d) < 0.3 ? 'weight about the same' : `${one(Math.abs(d))} kg ${d > 0 ? 'heavier' : 'lighter'}`); }
+    if (first.fat_pct !== null && last.fat_pct !== null) { const d = last.fat_pct - first.fat_pct;
+      ch.push(Math.abs(d) < 0.3 ? 'body fat about the same' : `body fat ${one(Math.abs(d))} points ${d > 0 ? 'higher' : 'lower'}`); }
+    if (first.muscle_kg != null && last.muscle_kg != null) { const d = last.muscle_kg - first.muscle_kg;
+      ch.push(Math.abs(d) < 0.3 ? 'muscle about the same' : `${one(Math.abs(d))} kg ${d > 0 ? 'more' : 'less'} muscle`); }
+    if (ch.length) lead += ` Since ${fmtShort(first._d)} (${ws.length} weigh-ins): ${ch.join(', ')}.`;
+  } else if (!inRange) lead += ' No weigh-ins in this period; showing your latest ones.';
+  $('body-lead').textContent = lead;
+  const a = inRange ? P.start : ws[0]._d, b = inRange ? end : ws[ws.length - 1]._d;
+  const nearestW = (d, k) => nearest(ws.filter(w => w[k] !== null && w[k] !== undefined), d, k);
+  const chart = (box, k, color, unit, f) => timeChart($(box), { series: [{ points: ws.map(w => ({ d: w._d, v: w[k] })), kind: 'line', color, markers: true, maxGap: 60 * MS_DAY }],
+    a, b, yFmt: v => f(v), height: 180,
+    hover: d => { const w = nearestW(d, k); if (!w) return null; return { t: w._d.getTime() + MS_DAY / 2, html: `${fmtDay(w._d)} at ${w._t}<br><b>${f(w[k])}</b> ${unit}` }; } });
+  chart('body-w', 'weight_kg', css('--s1'), 'kg', one);
+  // second chart: pick any measurement the weigh-ins have
+  const avail = BODY_COLS.filter(([k]) => k !== 'weight_kg' && ws.some(w => w[k] !== null && w[k] !== undefined));
+  if (!avail.some(([k]) => k === BODY_PICK) && avail.length) BODY_PICK = avail[0][0];
+  const pick = $('body-pick'); pick.innerHTML = '';
+  for (const [k, name] of avail) {
+    const b = document.createElement('button'); b.textContent = name; b.setAttribute('aria-pressed', String(k === BODY_PICK));
+    b.addEventListener('click', () => { BODY_PICK = k; renderBody(periods()); });
+    pick.appendChild(b);
+  }
+  const sel = avail.find(([k]) => k === BODY_PICK);
+  if (sel) chart('body-f', sel[0], css('--s2'), sel[2], sel[3]); else $('body-f').innerHTML = '';
+  const cols = BODY_COLS.filter(([k]) => ws.some(w => w[k] !== null && w[k] !== undefined));
+  $('body-table').innerHTML = `<table><tr><th>Date</th>${cols.map(([, n, u]) => `<th>${n}${u ? ` (${u})` : ''}</th>`).join('')}</tr>` +
+    ws.slice().reverse().slice(0, 30).map(w => `<tr><td>${fmtDay(w._d)} ${w._t}</td>${cols.map(([k, , , f]) => `<td>${w[k] === null || w[k] === undefined ? '' : esc(f(w[k]))}</td>`).join('')}</tr>`).join('') + '</table>';
+}
+
 function renderAll(top = true) {
   hideTip();
   document.querySelectorAll('.ranges button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.range === RANGE)));
@@ -631,6 +693,7 @@ function renderAll(top = true) {
   renderSleep(P);
   renderWeek(P);
   renderBP(P);
+  renderBody(P);
 }
 
 // ------------------------------------------------------------ wiring
@@ -642,7 +705,10 @@ $('detail-table-btn').addEventListener('click', () => {
   const t = $('detail-table'); t.hidden = !t.hidden; $('detail-table-btn').textContent = t.hidden ? 'Show as table' : 'Hide table';
 });
 const origRender = renderAll;
-renderAll = (top = true) => { try { localStorage.setItem('hs-metric', METRIC); } catch (e) {} origRender(top); };
+renderAll = (top = true) => {
+  if (!META.version) return;   // nothing loaded yet (e.g. a range tapped while loading)
+  try { localStorage.setItem('hs-metric', METRIC); } catch (e) {} origRender(top);
+};
 let resizeTimer; window.addEventListener('resize', () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(() => renderAll(), 150); });
 matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => renderAll());
 
@@ -651,11 +717,15 @@ async function refresh() {
   catch (e) { $('updated').textContent = 'Could not load your data (' + e.message + '). Refresh to try again.'; }
 }
 // Reload the data every 5 minutes while the page is open, or every 30 seconds while the summary is being prepared.
+// The first load always happens, even in a background tab; after that only while the page is visible, and straight
+// away when it becomes visible again.
+let firstLoad = true;
 async function loop() {
-  if (document.visibilityState === 'visible') await refresh();
+  if (firstLoad || document.visibilityState === 'visible') { firstLoad = false; await refresh(); }
   const busy = !META.summary_ready || META.days_to_prepare > 0 || META.queued_records > 0;
   setTimeout(loop, (busy ? 30 : 300) * 1000);
 }
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && META.version) refresh(); });
 loop();
 </script>
 </body>

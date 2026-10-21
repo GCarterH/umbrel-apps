@@ -267,6 +267,8 @@ def deletions(con, records):
             continue
         typ = r.get('type') if isinstance(r.get('type'), str) else None
         cur = con.execute('INSERT OR IGNORE INTO deletions (uuid, type, deleted_at) VALUES (?,?,?)', (uid, typ, now))
+        # A scale weigh-in's id is its BodyMass sample's uuid: deleting the weight in Health deletes the weigh-in too.
+        con.execute('UPDATE weighins SET deleted_at = ? WHERE id = ? AND deleted_at IS NULL', (now, uid))
         if cur.rowcount:
             accepted += 1
         else:

@@ -8,7 +8,7 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, StreamingResponse
 
-from . import __version__, config, daily as D, dailycache, db, idindex, ingest, spool, timeutil as T
+from . import __version__, body, config, daily as D, dailycache, db, idindex, ingest, spool, timeutil as T, weighins
 
 log = logging.getLogger('healthsync')
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(message)s')
@@ -184,6 +184,59 @@ def _date(s, name):
         raise HTTPException(400, f'{name} must be YYYY-MM-DD')
 
 
+@app.post('/api/v1/weighins')
+async def post_weighins(request: Request):
+    """Scale weigh-ins from the app's Weigh In: {"weighins": [{id, measured_at, time_zone, weight_kg, impedance_ohms,
+    bmi, body_fat_pct, lean_mass_kg, muscle_mass_kg, body_water_pct, bone_mass_kg, visceral_fat, bmr_kcal, protein_pct,
+    profile{}, scale_model, formula, source, app_version, ...}]}, gzip or plain. Percentages 0-100. An id already stored
+    is a duplicate. Fields not listed are kept too (extra). Reply {accepted, duplicates, rejected}."""
+    auth(request)
+    raw = await request.body()
+    enc = request.headers.get('content-encoding', '').lower().strip()
+
+    def work():
+        b = _have_body(raw, enc)
+        items = b.get('weighins') if isinstance(b, dict) else None
+        if not isinstance(items, list):
+            raise spool.BadBody(400, 'expected {"weighins": [...]}')
+        if len(items) > 5000:
+            raise spool.BadBody(413, 'at most 5,000 weigh-ins per request')
+        with db.write_lock:
+            con = db.writer()
+            try:
+                with con:
+                    return weighins.store(con, items)
+            except Exception:
+                log.exception('storing weigh-ins failed')
+                raise
+    try:
+        res = await run_in_threadpool(work)
+    except spool.BadBody as e:
+        raise HTTPException(e.status, str(e))
+    log.info('POST weighins: %d new, %d duplicates, %d rejected', res['accepted'], res['duplicates'], len(res['rejected']))
+    return res
+
+
+@app.get('/api/v1/weighins')
+def get_weighins(request: Request, from_: str = Query(None, alias='from'), to: str = None):
+    """Every scale weigh-in with all its measurements, newest first. from/to are UTC dates (inclusive), both optional."""
+    auth(request)
+    f = _date(from_, 'from') if from_ else None
+    t = _date(to, 'to') if to else None
+    return dict(fields=weighins.FIELDS, weighins=weighins.rows(db.reader(), f, t))
+
+
+@app.get('/api/v1/body')
+def get_body(request: Request, from_: str = Query(None, alias='from'), to: str = None):
+    """One row per weigh-in: weight, BMI, fat %, lean mass, plus the scale's extra measurements (muscle, water, bone,
+    visceral fat, BMR, protein, impedance) when Health Sync's own scale reading has them. from/to are UTC dates
+    (inclusive); both optional. Overlapping Zepp Life and Health Sync samples of one weigh-in are merged."""
+    auth(request)
+    f = _date(from_, 'from') if from_ else None
+    t = _date(to, 'to') if to else None
+    return dict(fields=body.FIELDS, readings=body.readings(db.reader(), f, t))
+
+
 @app.get('/api/v1/daily')
 def get_daily(request: Request, from_: str = Query(None, alias='from'), to: str = None):
     """from/to are local dates, inclusive. Default: the last 30 days."""
@@ -201,6 +254,7 @@ EXPORT_TABLES = {   # type name -> (table, time column)
     'HKCategoryTypeIdentifierSleepAnalysis': ('sleep_segments', 'start_utc'),
     'HKWorkoutTypeIdentifier': ('workouts', 'start_utc'),
     'HKDataTypeIdentifierElectrocardiogram': ('ecgs', 'time_utc'),
+    'weighins': ('weighins', 'measured_at'),
 }
 
 
@@ -227,7 +281,7 @@ def get_export(request: Request, from_: str = Query(None, alias='from'), to: str
     sample_types = [t for t in want if t not in EXPORT_TABLES] if want else None
     parts = [('samples', 'samples', 'start_utc', sample_types)]
     for name, key in (('HKCategoryTypeIdentifierSleepAnalysis', 'sleep'), ('HKWorkoutTypeIdentifier', 'workouts'),
-                      ('HKDataTypeIdentifierElectrocardiogram', 'ecgs')):
+                      ('HKDataTypeIdentifierElectrocardiogram', 'ecgs'), ('weighins', 'weighins')):
         if not want or name in want:
             parts.append((key, *EXPORT_TABLES[name], None))
     if want and not sample_types:
@@ -248,7 +302,7 @@ def get_export(request: Request, from_: str = Query(None, alias='from'), to: str
                 first, buf = True, []
                 for r in con.execute(sql, args):
                     d = dict(r)
-                    for k in ('metadata_json', 'weather_json'):
+                    for k in ('metadata_json', 'weather_json', 'profile_json', 'extra_json'):
                         if k in d:
                             d[k[:-5]] = json.loads(d.pop(k)) if d[k] else None
                     if table == 'workouts':
@@ -289,7 +343,8 @@ def dashboard_data():
     return dict(version=__version__, last_upload=s['last_upload'], total_records=s['total_records'],
                 queued_records=s['queued_records'], summary_ready=dailycache.ready(con), days_to_prepare=dailycache.pending(con),
                 home_tz=config.HOME_TZ,
-                columns=D.COLUMNS, rows=[[r.get(c) for c in D.COLUMNS] for r in rows])
+                columns=D.COLUMNS, rows=[[r.get(c) for c in D.COLUMNS] for r in rows],
+                body_fields=body.FIELDS, body=[[w[f] for f in body.FIELDS] for w in body.readings(con)])
 
 
 @app.get('/connect', response_class=HTMLResponse)

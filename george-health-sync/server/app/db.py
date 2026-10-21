@@ -103,6 +103,34 @@ CREATE TABLE IF NOT EXISTS type_stats (
 );
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT);
 
+-- Scale weigh-ins from the Health Sync app's Weigh In (POST /api/v1/weighins): every measurement the scale gives,
+-- including ones Apple Health has no field for. Percentages are 0-100. Any field not listed is kept in extra_json.
+CREATE TABLE IF NOT EXISTS weighins (
+    id TEXT PRIMARY KEY,
+    measured_at TEXT NOT NULL,
+    time_zone TEXT NOT NULL,
+    weight_kg REAL,
+    impedance_ohms INTEGER,
+    bmi REAL,
+    body_fat_pct REAL,
+    lean_mass_kg REAL,
+    muscle_mass_kg REAL,
+    body_water_pct REAL,
+    bone_mass_kg REAL,
+    visceral_fat REAL,
+    bmr_kcal INTEGER,
+    protein_pct REAL,
+    profile_json TEXT,
+    scale_model TEXT,
+    formula TEXT,
+    source TEXT,
+    app_version TEXT,
+    extra_json TEXT,
+    received_at TEXT NOT NULL,
+    deleted_at TEXT
+);
+CREATE INDEX IF NOT EXISTS weighins_time ON weighins (measured_at);
+
 -- Saved daily summary for the dashboard and /daily (dailycache.py): one row per local date, as JSON.
 CREATE TABLE IF NOT EXISTS daily_cache (date TEXT PRIMARY KEY, row_json TEXT NOT NULL);
 -- Days to recalculate. gen is when a day was last marked: a day is only unmarked once the numbers calculated after
