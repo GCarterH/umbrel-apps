@@ -2,7 +2,7 @@ manifestVersion: 1
 id: george-health-sync
 category: files
 name: Health Sync
-version: "0.2.2"
+version: "0.2.3"
 tagline: Keep your Apple Health data on your Umbrel
 description: >-
   Receives Apple Health records from the Health Sync iPhone app and stores them in a SQLite
@@ -23,4 +23,4 @@ defaultUsername: ""
 defaultPassword: ""
 submitter: George Hay
 submission: ""
-releaseNotes: "The phone can now ask which records the server already has (POST /api/v1/have) and send only new ones, so a re-sync no longer re-uploads your whole history. Re-sent data is also checked much faster. Quieter log."
+releaseNotes: "Body composition: every weigh-in on the dashboard and through GET /api/v1/body, including the scale’s muscle, water, bone, visceral fat, BMR, protein and impedance readings. The dashboard now loads in a background tab too."
