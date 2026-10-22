@@ -105,6 +105,14 @@ footer { color: var(--text-3); font-size: 12px; margin-top: 24px; }
 .tile .value { font-size: 20px; font-weight: 650; font-variant-numeric: tabular-nums; }
 .tile .value small { font-size: 12px; font-weight: 500; color: var(--text-2); margin-left: 3px; }
 .tile .usual { color: var(--text-3); font-size: 12px; }
+.mcards { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; }
+.mcard { background: var(--raised); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; display: flex; flex-direction: column; gap: 2px; height: 148px; overflow: hidden; }
+.mcard .name { color: var(--text-2); font-size: 12px; font-weight: 600; }
+.mcard .value { font-size: 20px; font-weight: 650; font-variant-numeric: tabular-nums; }
+.mcard .value small { font-size: 12px; font-weight: 500; color: var(--text-2); margin-left: 3px; }
+.mcard .usual { color: var(--text-3); font-size: 12px; min-height: 16px; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.mcard .mini { margin-top: auto; }
+
 .daypart h3 { font-size: 14px; margin: 14px 0 4px; }
 
 .you input { font: inherit; width: 70px; padding: 2px 6px; border: 1px solid var(--line); border-radius: 6px; background: var(--raised); color: var(--text); }
@@ -925,10 +933,12 @@ function renderYou(A, age) {
 // ------------------------------------------------------------ one day
 let DAY = null, DAYDATA = null;
 const STAGES = [['awake', 'Awake', '--s4'], ['asleepREM', 'REM', '--s1'], ['asleepCore', 'Core', '--s7'], ['asleepUnspecified', 'Asleep', '--s7'], ['asleepDeep', 'Deep', '--s3']];
-const DAY_TILES = [['Steps', 'Steps', '', int], ['Distance (km)', 'Distance', 'km', v => v.toFixed(1)], ['Exercise min', 'Exercise', 'min', int],
-  ['Active kcal', 'Active energy', 'kcal', int], ['Flights climbed', 'Flights climbed', '', int], ['Resting HR', 'Resting heart rate', 'bpm', int],
-  ['Walking HR', 'Walking heart rate', 'bpm', int], ['Sleep HRV (ms)', 'HRV, asleep', 'ms', int], ['Sleep HR', 'Heart rate, asleep', 'bpm', int],
-  ['VO2 max', 'VO₂ max', '', one], ['Blood oxygen %', 'Blood oxygen', '%', one], ['Weight (kg)', 'Weight', 'kg', one], ['Body fat %', 'Body fat', '%', one]];
+// Measures that are also in the daily summary, so the day can be set against your usual.
+const DAY_USUAL = { HKQuantityTypeIdentifierStepCount: 'Steps', HKQuantityTypeIdentifierDistanceWalkingRunning: 'Distance (km)',
+  HKQuantityTypeIdentifierAppleExerciseTime: 'Exercise min', HKQuantityTypeIdentifierActiveEnergyBurned: 'Active kcal',
+  HKQuantityTypeIdentifierFlightsClimbed: 'Flights climbed', HKQuantityTypeIdentifierRestingHeartRate: 'Resting HR',
+  HKQuantityTypeIdentifierWalkingHeartRateAverage: 'Walking HR', HKQuantityTypeIdentifierVO2Max: 'VO2 max',
+  HKQuantityTypeIdentifierOxygenSaturation: 'Blood oxygen %' };
 const words = t => { const s = String(t || '').replace(/([a-z])([A-Z])/g, '$1 $2').toLowerCase(); return cap(s); };
 const median = a => { if (!a.length) return null; const b = a.slice().sort((x, y) => x - y), m = b.length >> 1; return b.length % 2 ? b[m] : (b[m - 1] + b[m]) / 2; };
 
@@ -1022,23 +1032,16 @@ function renderDay() {
   $('day-prev').disabled = !!D.first_day && D.date <= D.first_day;
   $('day-next').disabled = D.date >= iso(new Date());
   if (D.first_day) $('day-pick').min = D.first_day; $('day-pick').max = iso(new Date());
-  // "Usual" = your median for the 90 days before this one.
+  // "Usual" = your middle value over the 90 days before this one, for measures in the daily summary.
   const before = ROWS.filter(r => r._d < d && r._d >= addDays(d, -90));
-  const tiles = DAY_TILES.filter(([c]) => row[c] !== null && row[c] !== undefined).map(([c, name, unit, f]) => {
-    const u = median(vals(before, c));
-    return `<div class="tile"><div class="name">${esc(name)}</div><div class="value">${esc(f(row[c]))}<small>${esc(unit)}</small></div>` +
-      `<div class="usual">${u !== null && before.length >= 14 ? `usual ${esc(f(u))}` : '&nbsp;'}</div></div>`;
-  });
-  if (row['Sleep (h)']) tiles.splice(0, 0, `<div class="tile"><div class="name">Sleep</div><div class="value">${hm(row['Sleep (h)'])}</div>` +
-    `<div class="usual">${before.length >= 14 && median(vals(before, 'Sleep (h)')) !== null ? `usual ${hm(median(vals(before, 'Sleep (h)')))}` : '&nbsp;'}</div></div>`);
+  const usual = col => { const u = before.length >= 14 ? median(vals(before, col)) : null; return u; };
   const away = D.tz !== META.home_tz ? ` · in ${esc(D.place)}` : '';
   const sum = [];
   if (row.Steps) sum.push(`${int(row.Steps)} steps`);
   if (D.workouts.length) sum.push(`${D.workouts.length} workout${D.workouts.length > 1 ? 's' : ''}`);
   if (row['Sleep (h)']) sum.push(`${hm(row['Sleep (h)'])} of sleep the night before`);
   let h = `<h3 style="font-size:16px;margin:0 0 2px">${fmtDay(d)}${away}</h3><p class="lead">${sum.length ? esc(cap(listWords(sum))) + '.' : 'Nothing recorded this day.'}` +
-    ' “Usual” is your middle value over the 90 days before.</p>';
-  if (tiles.length) h += `<div class="tiles">${tiles.join('')}</div>`;
+    ' Each small chart runs from midnight to midnight; hover or tap it for the times.</p><div id="day-groups-slot"></div>';
   h += `<div class="daypart"><h3>Heart rate through the day</h3><div class="legend"><span><i style="background:var(--s2)"></i>Heart rate (bpm)</span>` +
     `${D.sleep ? '<span><i style="background:var(--s7);opacity:.4"></i>Asleep</span>' : ''}${D.workouts.length ? '<span><i style="background:var(--s3);opacity:.4"></i>Workout</span>' : ''}</div><div class="chart" id="day-hr"></div></div>`;
   h += `<div class="daypart"><h3>Steps each hour</h3><div class="chart" id="day-steps"></div></div>`;
@@ -1054,6 +1057,34 @@ function renderDay() {
       D.workouts.map(w => `<tr><td>${esc(w.time)}</td><td>${esc(words(w.type))}</td><td>${mins(w.minutes)}</td><td>${w.km ? esc(w.km.toFixed(2)) + ' km' : ''}</td>` +
         `<td>${w.kcal ? int(w.kcal) + ' kcal' : ''}</td><td>${w.avg_hr ? `${w.avg_hr} average, ${w.max_hr} max` : ''}</td></tr>`).join('') + '</table></div></div>';
   }
+  // Everything the Watch tracked that day, by group, each with its shape across the day.
+  const cards = {};
+  // A measure with a chart's worth of data gets a card with its midnight-to-midnight chart; one with a reading or
+  // two (wrist temperature, resting heart rate, a short bike ride) is just the number and when, in a small card.
+  if (row['Sleep (h)']) (cards.Overnight = cards.Overnight || []).push({ name: 'Sleep', value: hm(row['Sleep (h)']), unit: '', small: true,
+    sub: [D.sleep ? `${clock(D.sleep.start / 60)} to ${clock(D.sleep.end / 60)}` : '', usual('Sleep (h)') !== null ? `usual ${hm(usual('Sleep (h)'))}` : ''].filter(Boolean).join(' · ') });
+  (D.metrics || []).forEach((m, i) => {
+    const f = v => m.decimals ? v.toLocaleString('en-GB', { minimumFractionDigits: m.decimals, maximumFractionDigits: m.decimals }) : int(v);
+    const col = DAY_USUAL[m.key], u = col ? usual(col) : null;
+    const pct = m.unit === '%' ? '%' : '', withUnit = v => `${f(v)}${pct || (m.unit ? ' ' + m.unit : '')}`;
+    const hours = m.hourly || [], pts = m.points || [];
+    let sub = [], small = false;
+    if (m.how === 'avg' && pts.length <= 1) { small = true; if (pts.length) sub.push(`at ${clock(pts[0][0] / 60)}`); }
+    else if (m.how === 'avg' && pts.length <= 6) { small = true; sub.push(pts.map(p => `${clock(p[0] / 60)} ${withUnit(p[1])}`).join(' · ')); }
+    else if (m.how === 'sum' && hours.length <= 2) { small = true; sub.push(hours.map(([hr, v]) => `${clock(hr)}–${clock(hr + 1)}${hours.length > 1 ? ' ' + withUnit(v) : ''}`).join(' · ')); }
+    else if (m.how === 'avg') sub.push(`${f(m.low)}–${f(m.high)}${pct} over ${int(m.count)} readings`);
+    if (m.how === 'stood') sub.push('hours with a minute or more standing');
+    if (u !== null) sub.push(`usual ${f(u)}`);
+    (cards[m.group] = cards[m.group] || []).push({ name: m.name, value: f(m.value), unit: m.unit, sub: sub.filter(Boolean).join(' · '), small,
+      m, id: small ? null : 'mc-' + i, fmt: f });
+  });
+  let groups = '';
+  for (const g of (D.groups || []).filter(g => cards[g])) {
+    const card = c => `<div class="mcard"><div class="name">${esc(c.name)}</div><div class="value">${esc(c.value)}<small>${esc(c.unit)}</small></div>` +
+      `<div class="usual">${esc(c.sub)}</div>${c.id ? `<div class="mini" id="${c.id}"></div>` : ''}</div>`;
+    groups += `<div class="daypart"><h3>${esc(g)}</h3><div class="mcards">${cards[g].map(card).join('')}</div></div>`;
+  }
+  h = h.replace('<div id="day-groups-slot"></div>', groups);   // the day's numbers come first, then the charts
   const extra = [];
   if (D.bp.length) extra.push('Blood pressure: ' + D.bp.map(b => `${b.systolic}/${b.diastolic} mmHg at ${b.time}`).join(', ') + '.');
   if (D.weighins.length) extra.push('Weigh-in: ' + D.weighins.map(w => `${one(w.weight_kg)} kg${w.fat_pct ? `, ${one(w.fat_pct)}% fat` : ''} at ${w.time}`).join('; ') + '.');
@@ -1075,6 +1106,33 @@ function renderDay() {
     hover: m => { const hr = Math.floor(m / 60), p = D.steps_hourly.find(x => x[0] === hr); if (!p || !p[1]) return null;
       return { m: hr * 60 + 30, html: `${clock(hr)} to ${clock(hr + 1)}<br><b>${int(p[1])}</b> steps` }; } });
   if (D.sleep) hypnogram($('day-sleep'), D.sleep);
+  for (const g of Object.values(cards)) for (const c of g) if (c.id && c.m) miniDay($(c.id), c.m, c.fmt);
+}
+
+/** A small 0–24 h chart for one measure: bars for hourly totals and stand hours, a line (or dots) for readings. */
+function miniDay(box, m, f) {
+  const W = Math.max(200, box.clientWidth), H = 46, X = mn => mn / 1440 * W;
+  const svg = el('svg', { viewBox: `0 0 ${W} ${H}`, height: H, width: '100%', preserveAspectRatio: 'none' }, box);
+  for (const hr of [6, 12, 18]) el('line', { x1: X(hr * 60), x2: X(hr * 60), y1: 0, y2: H, stroke: css('--grid') }, svg);
+  let find;
+  if (m.hourly) {
+    const hi = m.how === 'stood' ? 1 : Math.max(...m.hourly.map(p => p[1])) || 1, bw = W / 24 - 1.5;
+    for (const [hr, v] of m.hourly) el('rect', { x: X(hr * 60) + 0.75, y: H - 2 - (v / hi) * (H - 4), width: bw, height: Math.max(1, (v / hi) * (H - 4)), rx: 1.5, fill: css('--s1') }, svg);
+    find = mn => { const hr = Math.floor(mn / 60), p = m.hourly.find(x => x[0] === hr);
+      return `${clock(hr)}–${clock(hr + 1)}<br><b>${p ? (m.how === 'stood' ? 'stood' : esc(f(p[1])) + (m.unit ? ' ' + esc(m.unit) : '')) : (m.how === 'stood' ? 'no stand' : 'none')}</b>`; };
+  } else {
+    const pts = m.points.filter(p => p[0] >= 0 && p[0] < 1440); if (!pts.length) return;
+    const vs = pts.map(p => p[1]), lo = Math.min(...vs), hi = Math.max(...vs), Y = v => hi === lo ? H / 2 : H - 4 - (v - lo) / (hi - lo) * (H - 8);
+    // Readings that come in bursts (walking, blood oxygen) are dots; only a steady stream (heart rate) is a line.
+    if (pts.length <= 60) pts.forEach(p => el('circle', { cx: X(p[0]), cy: Y(p[1]), r: 2.2, fill: css('--s2') }, svg));
+    else { let dd = '', prev = null; for (const [mn, v] of pts) { dd += `${prev !== null && mn - prev <= 60 ? 'L' : 'M'}${X(mn).toFixed(1)},${Y(v).toFixed(1)}`; prev = mn; }
+      el('path', { d: dd, fill: 'none', stroke: css('--s2'), 'stroke-width': 1.5, 'vector-effect': 'non-scaling-stroke' }, svg); }
+    find = mn => { let b = null; for (const p of pts) if (!b || Math.abs(p[0] - mn) < Math.abs(b[0] - mn)) b = p;
+      return b && Math.abs(b[0] - mn) <= 90 ? `${clock(b[0] / 60)}<br><b>${esc(f(b[1]))}</b>${m.unit ? ' ' + esc(m.unit) : ''}` : null; };
+  }
+  const move = ev => { const r = svg.getBoundingClientRect(), mn = (ev.clientX - r.left) / r.width * 1440, t = find(mn);
+    if (t) showTip(box, ev.clientX - r.left, ev.clientY - r.top, t); else hideTip(); };
+  svg.addEventListener('pointermove', move); svg.addEventListener('pointerdown', move); svg.addEventListener('pointerleave', hideTip);
 }
 
 function renderAll(top = true) {
