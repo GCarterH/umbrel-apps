@@ -78,6 +78,20 @@ th { color: var(--text-2); font-weight: 600; }
 .empty { color: var(--text-3); font-size: 14px; padding: 18px 0; }
 body.loading section, body.loading .two, body.loading .period { display: none; }
 footer { color: var(--text-3); font-size: 12px; margin-top: 24px; }
+.peer { display: grid; grid-template-columns: 190px 1fr; gap: 6px 18px; padding: 14px 0; border-top: 1px solid var(--grid); }
+.peer:first-child { border-top: 0; padding-top: 4px; }
+.peer .name { color: var(--text-2); font-size: 13px; font-weight: 600; }
+.peer .value { font-size: 22px; font-weight: 650; font-variant-numeric: tabular-nums; }
+.peer .value small { font-size: 13px; font-weight: 500; color: var(--text-2); margin-left: 4px; }
+.peer .when { color: var(--text-3); font-size: 12px; }
+.peer .words { font-size: 14px; margin: 2px 0 6px; }
+.peer .src { color: var(--text-3); font-size: 12px; margin-top: 4px; }
+.peer .src a { color: var(--text-3); }
+.peer svg { display: block; width: 100%; overflow: visible; }
+@media (max-width: 640px) { .peer { grid-template-columns: 1fr; } }
+.you { font-size: 13px; color: var(--text-2); margin: 0 0 6px; }
+.you input { font: inherit; width: 70px; padding: 2px 6px; border: 1px solid var(--line); border-radius: 6px; background: var(--raised); color: var(--text); }
+.you button { font: inherit; font-size: 13px; padding: 2px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--raised); color: var(--text); cursor: pointer; }
 </style>
 </head>
 <body class="loading">
@@ -106,6 +120,13 @@ footer { color: var(--text-3); font-size: 12px; margin-top: 24px; }
     <h2>At a glance</h2>
     <p class="lead" id="cards-lead">Daily averages for the period. Tap a card to see its chart.</p>
     <div class="cards" id="cards"></div>
+  </section>
+
+  <section id="peers-sec">
+    <h2 id="peers-title">Compared with men your age</h2>
+    <p class="lead" id="peers-lead"></p>
+    <div class="you" id="you"></div>
+    <div id="peers"></div>
   </section>
 
   <section id="detail-sec">
@@ -675,6 +696,194 @@ function renderBody(P) {
     ws.slice().reverse().slice(0, 30).map(w => `<tr><td>${fmtDay(w._d)} ${w._t}</td>${cols.map(([k, , , f]) => `<td>${w[k] === null || w[k] === undefined ? '' : esc(f(w[k]))}</td>`).join('')}</tr>`).join('') + '</table>';
 }
 
+// ------------------------------------------------------------ compared with people your age
+// Every figure below is copied from the source named with it (checked against the paper or the organisation's page).
+// Only measures with a published norm that fits are shown; anything else is left out rather than guessed.
+const SRC = {
+  friend: ['FRIEND registry, Kaminsky et al., Mayo Clinic Proceedings 2022, Table 3 (treadmill tests, men)', 'https://doi.org/10.1016/j.mayocp.2021.08.020'],
+  nhanes: ['NHANES 1999–2008, Ostchega et al., National Health Statistics Reports No. 41 (2011), Table 2 (men 20–39, n = 3,445)', 'https://www.cdc.gov/nchs/data/nhsr/nhsr041.pdf'],
+  paluch: ['Paluch et al., Lancet Public Health 2022 (15 studies, 47,471 adults)', 'https://doi.org/10.1016/S2468-2667(21)00302-9'],
+  aasm: ['American Academy of Sleep Medicine and Sleep Research Society consensus, Sleep 2015', 'https://doi.org/10.5665/sleep.4716'],
+  aha: ['American Heart Association blood pressure categories', 'https://www.heart.org/en/health-topics/high-blood-pressure/understanding-blood-pressure-readings'],
+  cdc: ['CDC adult BMI categories', 'https://www.cdc.gov/bmi/adult-calculator/bmi-categories.html'],
+  kelly: ['NHANES body scans (DXA), Kelly et al., PLoS ONE 2009, Table 4 (men)', 'https://doi.org/10.1371/journal.pone.0007038'],
+};
+// FRIEND 2022 Table 3, treadmill, men: VO2peak (ml/kg/min) at the 10th, 20th … 90th percentile, by age group.
+const FRIEND_MEN = { 20: [28.6, 35.2, 40.0, 43.6, 46.5, 49.0, 51.9, 54.5, 58.6], 30: [24.9, 29.8, 33.5, 37.0, 39.7, 43.4, 46.4, 50.0, 55.5],
+  40: [22.1, 26.7, 29.7, 32.4, 35.3, 37.9, 40.9, 45.2, 50.8], 50: [18.6, 22.2, 24.5, 26.9, 29.2, 31.8, 34.3, 38.3, 43.4],
+  60: [15.8, 18.5, 20.7, 22.8, 24.6, 26.5, 28.7, 32.0, 37.1], 70: [13.6, 15.9, 17.3, 19.1, 20.6, 22.2, 23.8, 25.9, 29.4],
+  80: [12.9, 14.8, 16.1, 16.6, 17.6, 18.4, 20.0, 21.4, 22.8] };
+// NHANES Table 2, men 20–39: resting pulse (beats/min) at the 10th, 25th, 50th, 75th and 90th percentile.
+const NHANES_MEN_20_39 = [[10, 55], [25, 61], [50, 69], [75, 76], [90, 84]];
+
+function ageOn(dob, d) {
+  if (!dob) return null;
+  const [y, m, dd] = dob.split('-').map(Number);
+  return d.getFullYear() - y - ((d.getMonth() + 1 < m || (d.getMonth() + 1 === m && d.getDate() < dd)) ? 1 : 0);
+}
+/** Where v falls among percentile points [[p, value]…] (values rising), as a percentile: 5 below the lowest point, 95 above the highest. */
+function pctOf(v, pts) {
+  if (v < pts[0][1]) return 5;
+  for (let i = 1; i < pts.length; i++) if (v <= pts[i][1]) {
+    const [p0, v0] = pts[i - 1], [p1, v1] = pts[i]; return p0 + (p1 - p0) * (v - v0) / (v1 - v0);
+  }
+  return 95;
+}
+/** Plain words for a percentile: "higher than about 6 in 10 men aged 20–29". */
+function inTen(p, lo, hi, who) {
+  if (p < 10) return `${cap(lo)} than 9 in 10 ${who}`;
+  if (p > 90) return `${cap(hi)} than 9 in 10 ${who}`;
+  const above = Math.round(p / 10);
+  return above >= 5 ? `${cap(hi)} than about ${above} in 10 ${who}` : `${cap(lo)} than about ${10 - above} in 10 ${who}`;
+}
+const srcLine = (...keys) => keys.map(k => `<a href="${SRC[k][1]}" target="_blank" rel="noopener">${esc(SRC[k][0])}</a>`).join(' · ');
+
+// Drawn at the width it's shown at (up to 520), so the labels stay readable on a phone.
+const stripW = () => Math.min(520, Math.max(280, document.documentElement.clientWidth - 70));
+/** A strip of named ranges with a marker for you. segs: [{label, from, to}] (to: null = open-ended); each range gets the
+ *  same width, and the marker sits in proportion within its range. */
+function bandStrip(segs, v, fmtEdge) {
+  const W = stripW(), H = 50, n = segs.length, w = W / n;
+  const svg = document.createElementNS(NS, 'svg'); svg.setAttribute('viewBox', `0 0 ${W} ${H}`); svg.setAttribute('height', H);
+  svg.setAttribute('role', 'img');
+  let at = null;
+  segs.forEach((s, i) => {
+    const mine = v !== null && v >= (s.from === null ? -Infinity : s.from) && (s.to === null || v < s.to);
+    el('rect', { x: i * w + 1, y: 4, width: w - 2, height: 14, rx: 4, fill: mine ? css('--s1') : css('--grid') }, svg);
+    el('text', { x: i * w + w / 2, y: 34, 'text-anchor': 'middle', 'font-size': 12, fill: mine ? css('--text') : css('--text-3'), 'font-weight': mine ? 650 : 400 }, svg).textContent = s.label;
+    if (i) el('text', { x: i * w, y: 48, 'text-anchor': 'middle', 'font-size': 11, fill: css('--text-3') }, svg).textContent = fmtEdge(s.from);
+    if (mine) {
+      // An open-ended range is drawn as wide as its neighbour, for placing the marker.
+      const width = j => segs[j] && segs[j].from !== null && segs[j].to !== null ? segs[j].to - segs[j].from : null;
+      const lo = s.from === null ? s.to - (width(i + 1) || Math.abs(s.to) * 0.2) : s.from;
+      const hi = s.to === null ? s.from + (width(i - 1) || Math.abs(s.from) * 0.2) : s.to;
+      at = i * w + w * Math.min(0.95, Math.max(0.05, (v - lo) / (hi - lo)));
+    }
+  });
+  if (at !== null) el('path', { d: `M${at - 6},0 L${at + 6},0 L${at},8 Z`, fill: css('--text') }, svg);
+  return svg;
+}
+/** A scale with the range most people fall in (10th–90th percentile) shaded, the middle marked, and you. */
+function spreadStrip(p10, p50, p90, v, fmt) {
+  const W = stripW(), H = 50, span = p90 - p10, lo = Math.min(p10 - span * 0.3, v - span * 0.05), hi = Math.max(p90 + span * 0.3, v + span * 0.05);
+  const X = x => (x - lo) / (hi - lo) * W;
+  const svg = document.createElementNS(NS, 'svg'); svg.setAttribute('viewBox', `0 0 ${W} ${H}`); svg.setAttribute('height', H); svg.setAttribute('role', 'img');
+  el('rect', { x: 0, y: 9, width: W, height: 4, rx: 2, fill: css('--grid') }, svg);
+  el('rect', { x: X(p10), y: 4, width: X(p90) - X(p10), height: 14, rx: 4, fill: css('--accent-soft'), stroke: css('--line') }, svg);
+  el('line', { x1: X(p50), x2: X(p50), y1: 4, y2: 18, stroke: css('--text-3'), 'stroke-width': 2 }, svg);
+  for (const [x, label] of [[p10, fmt(p10)], [p50, `middle ${fmt(p50)}`], [p90, fmt(p90)]])
+    el('text', { x: X(x), y: 34, 'text-anchor': 'middle', 'font-size': 11, fill: css('--text-3') }, svg).textContent = label;
+  el('text', { x: X((p10 + p90) / 2), y: 48, 'text-anchor': 'middle', 'font-size': 11, fill: css('--text-3') }, svg).textContent = '8 in 10 fall in the shaded range';
+  el('circle', { cx: X(v), cy: 11, r: 7, fill: css('--s1'), stroke: css('--surface'), 'stroke-width': 2 }, svg);
+  return svg;
+}
+
+function renderPeers(P) {
+  const A = META.about || {}, box = $('peers'); box.innerHTML = '';
+  const today = new Date(), age = ageOn(A.dob, today), male = A.sex === 'male';
+  $('peers-sec').hidden = age === null || age < 20;
+  if ($('peers-sec').hidden) return;
+  const h = A.height_cm ? A.height_cm / 100 : null;
+  $('peers-title').textContent = male ? 'Compared with men your age' : 'Compared with published norms';
+  const cur = between(...P.cur), when = RANGE === 'all' ? 'the last 12 months' : `the last ${RANGE === '365' ? '12 months' : RANGE + ' days'}`;
+  $('peers-lead').textContent = `Your averages for ${when}, next to published figures for ${male ? 'men' : 'adults'} aged ${age}. ` +
+    'The studies measured things their own way (a lab treadmill test, an examiner taking a pulse), and the Watch and scale estimate, so read these as a rough guide rather than a verdict.';
+  renderYou(A, age);
+  const rows = [];
+  const add = (name, value, unit, whenText, words, strip, src) => rows.push({ name, value, unit, whenText, words, strip, src });
+  const avgOf = col => { const a = vals(cur, col); return a.length ? { v: mean(a), n: a.length } : null; };
+
+  // VO2 max: FRIEND, the decade you're in.
+  const band = Math.floor(age / 10) * 10, vo = avgOf('VO2 max');
+  if (male && FRIEND_MEN[band] && vo) {
+    const t = FRIEND_MEN[band], pts = t.map((x, i) => [10 * (i + 1), x]), grp = `men aged ${band}–${band + 9}`;
+    add('VO₂ max', one(vo.v), 'ml/kg/min', `Average of ${vo.n} Watch estimate${vo.n > 1 ? 's' : ''}`,
+      `${inTen(pctOf(vo.v, pts), 'lower', 'higher', grp)} who did a lab treadmill test. The Watch estimates VO₂ max from walks and runs; the lab measured it.`,
+      spreadStrip(t[0], t[4], t[8], vo.v, one), srcLine('friend'));
+  }
+  // Resting heart rate: NHANES, men 20–39 (the only age group checked so far).
+  const rhr = avgOf('Resting HR');
+  if (male && age <= 39 && rhr) {
+    add('Resting heart rate', int(rhr.v), 'bpm', `Average of ${rhr.n} day${rhr.n > 1 ? 's' : ''}`,
+      `${inTen(pctOf(rhr.v, NHANES_MEN_20_39), 'lower', 'higher', 'men aged 20–39')}. The survey's figure is a pulse taken sitting down by an examiner, which isn't quite the same as the Watch's resting heart rate.`,
+      spreadStrip(55, 69, 84, rhr.v, int), srcLine('nhanes'));
+  }
+  // Steps: where the lower risk of death levelled off in Paluch 2022.
+  const st = avgOf('Steps');
+  if (st) {
+    const [a, b] = age < 60 ? [8000, 10000] : [6000, 8000];
+    const where = st.v < a ? 'below' : st.v < b ? 'within' : 'above';
+    add('Steps', int(st.v), 'a day', `Average of ${st.n} day${st.n > 1 ? 's' : ''}`,
+      `${cap(where)} the ${int(a)}–${int(b)} a day at which, for adults ${age < 60 ? 'under 60' : '60 and over'}, the lower risk of dying early levelled off. More steps than that weren't linked to a further drop.`,
+      bandStrip([{ label: `Under ${int(a / 1000)}k`, from: null, to: a }, { label: `${int(a / 1000)}k–${int(b / 1000)}k`, from: a, to: b }, { label: `Over ${int(b / 1000)}k`, from: b, to: null }], st.v, x => int(x)),
+      srcLine('paluch'));
+  }
+  // Sleep: 7 hours or more (adults 18–60).
+  const nights = vals(cur, 'Sleep (h)');
+  if (nights.length && age <= 60) {
+    const v = mean(nights), enough = nights.filter(x => x >= 7).length;
+    add('Sleep', hm(v), 'a night', `Average of ${nights.length} night${nights.length > 1 ? 's' : ''}`,
+      `${v >= 7 ? 'Meets' : 'Below'} the recommendation of 7 hours or more a night for adults 18–60. ${int(enough)} of ${int(nights.length)} nights (${Math.round(enough / nights.length * 100)}%) were 7 hours or more.`,
+      bandStrip([{ label: 'Under 6 h', from: null, to: 6 }, { label: '6–7 h', from: 6, to: 7 }, { label: '7 h or more', from: 7, to: null }], v, x => `${x} h`),
+      srcLine('aasm'));
+  }
+  // Blood pressure: AHA categories, on the average of the period's readings (else your latest 5).
+  let bps = cur.filter(r => r['Systolic BP']), bpWhen;
+  if (bps.length) bpWhen = `Average of ${bps.length} reading${bps.length > 1 ? 's' : ''}`;
+  else { bps = ROWS.filter(r => r['Systolic BP']).slice(-5); if (bps.length) bpWhen = `Average of your latest ${bps.length}, up to ${fmtShort(bps[bps.length - 1]._d)} ${bps[bps.length - 1]._d.getFullYear()}`; }
+  if (bps.length) {
+    const s = mean(vals(bps, 'Systolic BP')), d = mean(vals(bps, 'Diastolic BP'));
+    const sc = s < 120 ? 0 : s < 130 ? 1 : s < 140 ? 2 : 3, dc = d < 80 ? 0 : d < 90 ? 2 : 3, c = Math.max(sc, dc);
+    const names = ['Normal', 'Elevated', 'Stage 1 high blood pressure', 'Stage 2 high blood pressure'];
+    add('Blood pressure', `${int(s)}/${int(d)}`, 'mmHg', bpWhen,
+      `In the American Heart Association's “${names[c]}” range (normal is under 120/80). A diagnosis needs repeated readings over time, taken by or with a doctor.`,
+      bandStrip([{ label: 'Normal', from: null, to: 1 }, { label: 'Elevated', from: 1, to: 2 }, { label: 'Stage 1', from: 2, to: 3 }, { label: 'Stage 2', from: 3, to: null }],
+        c + 0.5, x => ['', '120', '130 or 80', '140 or 90'][x]), srcLine('aha'));
+  }
+  // BMI and fat mass index from the latest weigh-in, at your height.
+  const lastW = BODY.filter(w => w.weight_kg).pop();
+  if (lastW && h) {
+    const bmi = lastW.weight_kg / (h * h), lo = 18.5 * h * h, hi = 25 * h * h;
+    const cat = bmi < 18.5 ? 'underweight' : bmi < 25 ? 'healthy weight' : bmi < 30 ? 'overweight' : 'obesity';
+    add('BMI', one(bmi), '', `Weigh-in ${fmtShort(lastW._d)} ${lastW._d.getFullYear()}: ${one(lastW.weight_kg)} kg at ${one(A.height_cm)} cm`,
+      `In the CDC's “${cat}” range. At ${one(A.height_cm)} cm, a healthy-weight BMI (18.5 to under 25) is ${one(lo)} to ${one(hi)} kg. BMI can't tell muscle from fat, so it reads high for muscular people.`,
+      bandStrip([{ label: 'Underweight', from: null, to: 18.5 }, { label: 'Healthy', from: 18.5, to: 25 }, { label: 'Overweight', from: 25, to: 30 }, { label: 'Obesity', from: 30, to: null }], bmi, one),
+      srcLine('cdc'));
+    const lastF = BODY.filter(w => w.weight_kg && w.fat_pct).pop();
+    if (lastF && male) {
+      const fmi = lastF.weight_kg * lastF.fat_pct / 100 / (h * h);
+      const fc = fmi < 3 ? 'below normal' : fmi <= 6 ? 'normal' : fmi <= 9 ? 'excess fat' : 'obese';
+      add('Fat mass index', one(fmi), 'kg/m²', `Weigh-in ${fmtShort(lastF._d)} ${lastF._d.getFullYear()}: ${one(lastF.fat_pct)}% fat = ${one(lastF.weight_kg * lastF.fat_pct / 100)} kg`,
+        `Fat in kilograms divided by height squared, like BMI but for fat alone. In the “${fc}” range for men (normal is 3–6) from body scans of US adults. The scale's fat % is an estimate and can differ from a scan.`,
+        bandStrip([{ label: 'Below normal', from: null, to: 3 }, { label: 'Normal', from: 3, to: 6 }, { label: 'Excess fat', from: 6, to: 9 }, { label: 'Obese', from: 9, to: null }], fmi, one),
+        srcLine('kelly'));
+    }
+  }
+  for (const r of rows) {
+    const d = document.createElement('div'); d.className = 'peer';
+    d.innerHTML = `<div><div class="name">${esc(r.name)}</div><div class="value">${esc(r.value)}<small>${esc(r.unit)}</small></div><div class="when">${esc(r.whenText)}</div></div>` +
+      `<div><div class="words">${esc(r.words)}</div><div class="strip"></div><div class="src">Source: ${r.src}</div></div>`;
+    d.querySelector('.strip').appendChild(r.strip);
+    box.appendChild(d);
+  }
+  if (!rows.length) box.innerHTML = '<div class="empty">Not enough data in this period to compare.</div>';
+}
+
+function renderYou(A, age) {
+  const y = $('you');
+  const from = A.height_from === 'dashboard' ? 'set here' : A.height_from === 'Apple Health' ? `from Apple Health${A.height_date ? `, ${A.height_date.slice(0, 4)}` : ''}` : 'not set';
+  y.innerHTML = `Age ${age}${A.sex ? ', ' + esc(A.sex) : ''}. Height <b>${A.height_cm ? one(A.height_cm) + ' cm' : 'not set'}</b> (${esc(from)}). ` +
+    `<label>Change: <input id="h-in" type="number" min="100" max="250" step="0.5" inputmode="decimal" placeholder="cm"></label> <button id="h-save">Save</button>` +
+    (A.height_from === 'dashboard' && A.health_height_cm ? ` <button id="h-reset">Use Apple Health's (${one(A.health_height_cm)} cm)</button>` : '');
+  const send = async cm => {
+    const r = await fetch('/dashboard/height', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ height_cm: cm }) });
+    if (!r.ok) { alert('Could not save the height: ' + (await r.text())); return; }
+    META.about = await r.json(); renderAll(false);
+  };
+  $('h-save').addEventListener('click', () => { const v = Number($('h-in').value); if (v >= 100 && v <= 250) send(v); else alert('Enter a height between 100 and 250 cm.'); });
+  if ($('h-reset')) $('h-reset').addEventListener('click', () => send(null));
+}
+
 function renderAll(top = true) {
   hideTip();
   document.querySelectorAll('.ranges button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.range === RANGE)));
@@ -688,6 +897,7 @@ function renderAll(top = true) {
   const results = {}; for (const m of METRICS) results[m.k] = compare(m, P);
   if (top) renderChanges(P, results);
   renderCards(P, results);
+  renderPeers(P);
   renderDetail(P);
   renderWorkouts(P);
   renderSleep(P);

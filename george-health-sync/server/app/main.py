@@ -394,7 +394,56 @@ def dashboard_data():
                 queued_records=s['queued_records'], summary_ready=dailycache.ready(con), days_to_prepare=dailycache.pending(con),
                 home_tz=config.HOME_TZ,
                 columns=D.COLUMNS, rows=[[r.get(c) for c in D.COLUMNS] for r in rows],
-                body_fields=body.FIELDS, body=[[w[f] for f in body.FIELDS] for w in body.readings(con)])
+                body_fields=body.FIELDS, body=[[w[f] for f in body.FIELDS] for w in body.readings(con)],
+                about=about_you(con))
+
+
+HEIGHT = 'HKQuantityTypeIdentifierHeight'
+
+
+def about_you(con):
+    """Date of birth and sex from the phone's profile, and height: the one set on the dashboard, else the latest
+    Apple Health height. The dashboard's comparisons with people your age use these."""
+    prof = {r['type'][len(PROFILE):]: r['label'] if r['label'] is not None else r['value'] for r in con.execute(
+        'SELECT type, label, value, MAX(received_at) FROM samples WHERE type IN (?, ?) AND deleted_at IS NULL GROUP BY type',
+        (PROFILE + 'DateOfBirth', PROFILE + 'BiologicalSex'))}
+    out = dict(dob=prof.get('DateOfBirth'), sex=prof.get('BiologicalSex'), height_cm=None, height_from=None, height_date=None)
+    set_on_page = db.get_meta(con, 'height_cm')
+    if set_on_page:
+        out.update(height_cm=float(set_on_page), height_from='dashboard')
+    h = con.execute('SELECT value, unit, start_utc FROM samples WHERE type = ? AND deleted_at IS NULL ORDER BY start_utc DESC LIMIT 1',
+                    (HEIGHT,)).fetchone()
+    if h:
+        cm = h['value'] * {'m': 100, 'cm': 1, 'mm': 0.1, 'in': 2.54, 'ft': 30.48}.get(h['unit'], 1)
+        out['health_height_cm'] = round(cm, 1)
+        if not set_on_page:
+            out.update(height_cm=round(cm, 1), height_from='Apple Health', height_date=h['start_utc'][:10])
+    return out
+
+
+@app.post('/dashboard/height')
+async def set_height(request: Request):
+    """Set the height the dashboard uses ({"height_cm": 186}), or {"height_cm": null} to go back to Apple Health's.
+    Like the dashboard itself, it relies on the Umbrel login in front of it."""
+    if not config.SETUP_PAGE:
+        raise HTTPException(404)
+    try:
+        cm = (await request.json()).get('height_cm')
+    except (ValueError, AttributeError):
+        raise HTTPException(400, 'expected {"height_cm": number or null}')
+    if cm is not None and (not isinstance(cm, (int, float)) or isinstance(cm, bool) or not 100 <= cm <= 250):
+        raise HTTPException(400, 'height_cm must be between 100 and 250, or null')
+
+    def work():
+        with db.write_lock:
+            con = db.writer()
+            with con:
+                if cm is None:
+                    con.execute("DELETE FROM meta WHERE key = 'height_cm'")
+                else:
+                    db.set_meta(con, 'height_cm', round(float(cm), 1))
+    await run_in_threadpool(work)
+    return about_you(db.reader())
 
 
 @app.get('/connect', response_class=HTMLResponse)
