@@ -131,6 +131,25 @@ CREATE TABLE IF NOT EXISTS weighins (
 );
 CREATE INDEX IF NOT EXISTS weighins_time ON weighins (measured_at);
 
+-- Reports and results kept with the health data (documents.py), e.g. the pharmacogenomic report. Never expire.
+-- The file itself is in data/documents/<file_sha256><ext>.
+CREATE TABLE IF NOT EXISTS documents (
+    id TEXT PRIMARY KEY,
+    kind TEXT,
+    title TEXT,
+    issued_on TEXT,
+    provider TEXT,
+    notes TEXT,
+    structured_json TEXT,
+    file_name TEXT,
+    content_type TEXT,
+    file_size INTEGER,
+    file_sha256 TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    deleted_at TEXT
+);
+
 -- Saved daily summary for the dashboard and /daily (dailycache.py): one row per local date, as JSON.
 CREATE TABLE IF NOT EXISTS daily_cache (date TEXT PRIMARY KEY, row_json TEXT NOT NULL);
 -- Days to recalculate. gen is when a day was last marked: a day is only unmarked once the numbers calculated after

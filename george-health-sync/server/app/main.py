@@ -8,7 +8,7 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, StreamingResponse
 
-from . import __version__, body, config, daily as D, dailycache, db, idindex, ingest, spool, timeutil as T, weighins
+from . import __version__, body, config, daily as D, dailycache, db, documents, idindex, ingest, spool, timeutil as T, weighins
 
 log = logging.getLogger('healthsync')
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(message)s')
@@ -224,6 +224,56 @@ def get_weighins(request: Request, from_: str = Query(None, alias='from'), to: s
     f = _date(from_, 'from') if from_ else None
     t = _date(to, 'to') if to else None
     return dict(fields=weighins.FIELDS, weighins=weighins.rows(db.reader(), f, t))
+
+
+@app.put('/api/v1/documents/{doc_id}')
+async def put_document(doc_id: str, request: Request):
+    """Store or replace a document: {"kind", "title", "issued_on": "YYYY-MM-DD", "provider", "notes", "structured": {...},
+    "file": {"name", "content_type", "base64"}}, gzip or plain. Without "file", a stored file is kept."""
+    auth(request)
+    raw = await request.body()
+    enc = request.headers.get('content-encoding', '').lower().strip()
+
+    def work():
+        body = _have_body(raw, enc)
+        with db.write_lock:
+            con = db.writer()
+            with con:
+                return documents.put(con, doc_id, body)
+    try:
+        res = await run_in_threadpool(work)
+    except spool.BadBody as e:
+        raise HTTPException(e.status, str(e))
+    except documents.Bad as e:
+        raise HTTPException(400, str(e))
+    log.info('document %s %s (%s bytes)', doc_id, 'stored' if res['created'] else 'updated', res['file_size'])
+    return res
+
+
+@app.get('/api/v1/documents')
+def get_documents(request: Request, kind: str = None):
+    """All documents (metadata and structured summary; not the files), newest first. ?kind= filters."""
+    auth(request)
+    return dict(fields=documents.FIELDS, documents=documents.listing(db.reader(), kind))
+
+
+@app.get('/api/v1/documents/{doc_id}')
+def get_document(doc_id: str, request: Request):
+    auth(request)
+    d = documents.one(db.reader(), doc_id)
+    if not d:
+        raise HTTPException(404, 'no such document')
+    return d
+
+
+@app.get('/api/v1/documents/{doc_id}/file')
+def get_document_file(doc_id: str, request: Request):
+    auth(request)
+    d = documents.one(db.reader(), doc_id)
+    p = documents.file_path(d)
+    if not p:
+        raise HTTPException(404, 'no file for this document')
+    return FileResponse(p, media_type=d['content_type'] or 'application/octet-stream', filename=d['file_name'] or os.path.basename(p))
 
 
 @app.get('/api/v1/body')
