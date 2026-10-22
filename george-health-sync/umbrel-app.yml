@@ -2,7 +2,7 @@ manifestVersion: 1
 id: george-health-sync
 category: files
 name: Health Sync
-version: "0.2.5"
+version: "0.2.6"
 tagline: Keep your Apple Health data on your Umbrel
 description: >-
   Receives Apple Health records from the Health Sync iPhone app and stores them in a SQLite
@@ -23,4 +23,4 @@ defaultUsername: ""
 defaultPassword: ""
 submitter: George Hay
 submission: ""
-releaseNotes: "Dashboard: see how you compare with men your age (VO2 max, resting heart rate, steps, sleep, blood pressure, BMI and fat mass index), with the published source for every figure. Also: a documents store for reports such as your DNA medication report."
+releaseNotes: "Dashboard tabs (Overview, Day, Activity, Sleep, Body, Compared) and a new Day view: pick any day to see its heart rate, steps each hour, sleep stages and workouts."
