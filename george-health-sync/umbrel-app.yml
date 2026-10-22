@@ -2,7 +2,7 @@ manifestVersion: 1
 id: george-health-sync
 category: files
 name: Health Sync
-version: "0.2.3"
+version: "0.2.4"
 tagline: Keep your Apple Health data on your Umbrel
 description: >-
   Receives Apple Health records from the Health Sync iPhone app and stores them in a SQLite
@@ -23,4 +23,4 @@ defaultUsername: ""
 defaultPassword: ""
 submitter: George Hay
 submission: ""
-releaseNotes: "Body composition: every weigh-in on the dashboard and through GET /api/v1/body, including the scale’s muscle, water, bone, visceral fat, BMR, protein and impedance readings. The dashboard now loads in a background tab too."
+releaseNotes: "Documents: keep reports such as your DNA medication report on the Umbrel, with a structured summary, read through /api/v1/documents."
