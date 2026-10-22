@@ -8,7 +8,7 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, StreamingResponse
 
-from . import __version__, body, config, daily as D, dailycache, db, documents, idindex, ingest, spool, timeutil as T, weighins
+from . import __version__, body, config, daily as D, dailycache, dayview, db, documents, idindex, ingest, spool, timeutil as T, weighins
 
 log = logging.getLogger('healthsync')
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(message)s')
@@ -320,6 +320,14 @@ def _bound(s, name, end=False):
         raise HTTPException(400, f'{name} must be YYYY-MM-DD or an ISO-8601 time')
 
 
+@app.get('/api/v1/day')
+def get_day(request: Request, date: str):
+    """One local day in detail: its /daily row, steps per hour, heart rate per minute, the night's sleep stages,
+    workouts with heart rate, blood pressure and weigh-ins. Times are minutes after that day's local midnight."""
+    auth(request)
+    return dayview.day(db.reader(), _date(date, 'date'))
+
+
 @app.get('/api/v1/export')
 def get_export(request: Request, from_: str = Query(None, alias='from'), to: str = None, types: str = None,
                include_deleted: bool = False):
@@ -419,6 +427,14 @@ def about_you(con):
         if not set_on_page:
             out.update(height_cm=round(cm, 1), height_from='Apple Health', height_date=h['start_utc'][:10])
     return out
+
+
+@app.get('/dashboard/day')
+def dashboard_day(date: str):
+    """The dashboard's day view (same as /api/v1/day), behind the Umbrel login."""
+    if not config.SETUP_PAGE:
+        raise HTTPException(404)
+    return dayview.day(db.reader(), _date(date, 'date'))
 
 
 @app.post('/dashboard/height')

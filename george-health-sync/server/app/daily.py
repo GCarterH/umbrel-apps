@@ -112,10 +112,11 @@ def _inside(covered, t):
 COVER_MARGIN = 300
 
 
-def dedup_sum(rows):
+def dedup_sum(rows, into=None):
     """Sum a day's cumulative samples like the Health app: the Watch wins where both counted, and the iPhone
     (then other apps) only fills the time the Watch didn't cover, pro rata. Within one source, samples are summed
-    as the Health app does, except exact repeats (same start, end and value), which count once."""
+    as the Health app does, except exact repeats (same start, end and value), which count once.
+    into: optional (dict, key function); each record's share is also added to dict[key(record)] (e.g. by hour)."""
     groups = defaultdict(list)
     for r in rows:
         groups[(priority(r['source'], r['device']), r['source'] or '')].append(r)
@@ -128,9 +129,12 @@ def dedup_sum(rows):
                 continue
             seen.add((s, e, r['value']))
             if e <= s:   # an instant
-                total += 0.0 if _inside(covered, s) else r['value']
+                part = 0.0 if _inside(covered, s) else r['value']
             else:
-                total += r['value'] * (1 - min(1.0, _overlap(covered, s, e) / (e - s)))
+                part = r['value'] * (1 - min(1.0, _overlap(covered, s, e) / (e - s)))
+            total += part
+            if into:
+                into[0][into[1](r)] += part
             mine.append((s, e))
         for s, e in mine:
             _add(covered, s - COVER_MARGIN, e + COVER_MARGIN)

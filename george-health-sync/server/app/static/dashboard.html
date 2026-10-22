@@ -90,6 +90,23 @@ footer { color: var(--text-3); font-size: 12px; margin-top: 24px; }
 .peer svg { display: block; width: 100%; overflow: visible; }
 @media (max-width: 640px) { .peer { grid-template-columns: 1fr; } }
 .you { font-size: 13px; color: var(--text-2); margin: 0 0 6px; }
+.tabs { position: sticky; top: 0; z-index: 3; display: flex; gap: 4px; overflow-x: auto; background: var(--page); margin: 14px -16px 0; padding: 8px 16px; border-bottom: 1px solid var(--line); scrollbar-width: none; }
+.tabs::-webkit-scrollbar { display: none; }
+.tabs button { font: inherit; font-size: 15px; border: 0; background: none; color: var(--text-2); padding: 7px 14px; border-radius: 8px; cursor: pointer; white-space: nowrap; }
+.tabs button[aria-selected="true"] { background: var(--accent-soft); color: var(--text); font-weight: 600; }
+@media (max-width: 480px) { .tabs { gap: 0; padding: 8px 10px; } .tabs button { font-size: 14px; padding: 6px 6px; } }
+.tab-off { display: none !important; }
+.daynav { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin: 4px 0 12px; }
+.daynav button, .daynav input { font: inherit; font-size: 14px; padding: 5px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--raised); color: var(--text); cursor: pointer; }
+.daynav button:disabled { opacity: .4; cursor: default; }
+.tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; margin-bottom: 14px; }
+.tile { background: var(--raised); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; }
+.tile .name { color: var(--text-2); font-size: 12px; font-weight: 600; }
+.tile .value { font-size: 20px; font-weight: 650; font-variant-numeric: tabular-nums; }
+.tile .value small { font-size: 12px; font-weight: 500; color: var(--text-2); margin-left: 3px; }
+.tile .usual { color: var(--text-3); font-size: 12px; }
+.daypart h3 { font-size: 14px; margin: 14px 0 4px; }
+
 .you input { font: inherit; width: 70px; padding: 2px 6px; border: 1px solid var(--line); border-radius: 6px; background: var(--raised); color: var(--text); }
 .you button { font: inherit; font-size: 13px; padding: 2px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--raised); color: var(--text); cursor: pointer; }
 </style>
@@ -103,33 +120,48 @@ footer { color: var(--text-3); font-size: 12px; margin-top: 24px; }
     <a class="connect" href="/connect">Connect a phone</a>
   </header>
 
-  <div class="ranges" role="group" aria-label="Time range">
+  <nav class="tabs" role="tablist" aria-label="Sections" id="tabs">
+    <button role="tab" data-go="overview">Overview</button><button role="tab" data-go="day">Day</button><button role="tab" data-go="activity">Activity</button><button role="tab" data-go="sleep">Sleep</button><button role="tab" data-go="body">Body</button><button role="tab" data-go="compared">Compared</button>
+  </nav>
+  <div class="ranges" role="group" aria-label="Time range" id="range-bar">
     <button data-range="30">30 days</button><button data-range="90">90 days</button>
     <button data-range="365">12 months</button><button data-range="all">All time</button>
   </div>
   <div class="period" id="period"></div>
   <div id="banner"></div>
 
-  <section id="changes-sec">
+  <section id="changes-sec" data-tab="overview">
     <h2>What changed</h2>
     <p class="lead" id="changes-lead"></p>
     <ul class="changes" id="changes"></ul>
   </section>
 
-  <section>
+  <section data-tab="overview">
     <h2>At a glance</h2>
     <p class="lead" id="cards-lead">Daily averages for the period. Tap a card to see its chart.</p>
     <div class="cards" id="cards"></div>
   </section>
 
-  <section id="peers-sec">
+  <section id="peers-sec" data-tab="compared">
     <h2 id="peers-title">Compared with men your age</h2>
     <p class="lead" id="peers-lead"></p>
     <div class="you" id="you"></div>
     <div id="peers"></div>
   </section>
 
-  <section id="detail-sec">
+  <section id="day-sec" data-tab="day">
+    <h2>One day</h2>
+    <p class="lead">Pick any day to see it in detail. You can also tap a day on the Overview or Sleep charts.</p>
+    <div class="daynav">
+      <button id="day-prev" aria-label="Previous day">‹ Day before</button>
+      <input type="date" id="day-pick" aria-label="Day">
+      <button id="day-next" aria-label="Next day">Day after ›</button>
+      <button id="day-latest">Yesterday</button>
+    </div>
+    <div id="day-body"><div class="empty">Loading…</div></div>
+  </section>
+
+  <section id="detail-sec" data-tab="overview">
     <div class="chart-head"><h2 id="detail-title"></h2><div class="spacer"></div>
       <button class="linkbtn" id="detail-table-btn">Show as table</button></div>
     <p class="lead" id="detail-lead"></p>
@@ -137,14 +169,14 @@ footer { color: var(--text-3); font-size: 12px; margin-top: 24px; }
     <div class="tablewrap" id="detail-table" hidden></div>
   </section>
 
-  <section>
+  <section data-tab="activity">
     <h2>Workouts</h2>
     <p class="lead" id="wk-lead"></p>
     <div class="legend" id="wk-legend"></div>
     <div class="chart" id="wk"></div>
   </section>
 
-  <div class="two">
+  <div class="two" data-tab="sleep">
     <section>
       <h2>Sleep</h2>
       <p class="lead" id="sleep-lead"></p>
@@ -157,7 +189,7 @@ footer { color: var(--text-3); font-size: 12px; margin-top: 24px; }
     </section>
   </div>
 
-  <section>
+  <section data-tab="activity">
     <h2>Your week</h2>
     <p class="lead" id="week-lead"></p>
     <div class="two" style="gap:24px">
@@ -166,7 +198,7 @@ footer { color: var(--text-3); font-size: 12px; margin-top: 24px; }
     </div>
   </section>
 
-  <section id="body-sec">
+  <section id="body-sec" data-tab="body">
     <h2>Body composition</h2>
     <p class="lead" id="body-lead"></p>
     <div class="two" style="gap:24px">
@@ -176,7 +208,7 @@ footer { color: var(--text-3); font-size: 12px; margin-top: 24px; }
     <div class="tablewrap" id="body-table"></div>
   </section>
 
-  <section id="bp-sec">
+  <section id="bp-sec" data-tab="body">
     <h2>Blood pressure</h2>
     <p class="lead" id="bp-lead"></p>
     <div class="legend"><span><i style="background:var(--s1)"></i>Systolic</span><span><i style="background:var(--s2)"></i>Diastolic</span></div>
@@ -184,6 +216,7 @@ footer { color: var(--text-3); font-size: 12px; margin-top: 24px; }
     <div class="tablewrap" id="bp-table"></div>
   </section>
 
+  <div class="empty" id="tab-empty" hidden>Nothing to show here yet. It fills in once the phone has sent this kind of data.</div>
   <footer id="footer"></footer>
 </main>
 <div class="tip" id="tip"></div>
@@ -322,7 +355,7 @@ function showTip(container, x, y, htmlText) {
 const hideTip = () => { tip.style.display = 'none'; };
 
 /** Time chart. series: [{points:[{d, v}], color, kind:'line'|'dots'|'bars', width}], hover(d) -> html. */
-function timeChart(box, { series, a, b, height = 220, yFmt = String, yMin, yMax, hover, tickStep }) {
+function timeChart(box, { series, a, b, height = 220, yFmt = String, yMin, yMax, hover, tickStep, onPick }) {
   box.innerHTML = '';
   const W = Math.max(280, box.clientWidth), H = height, L = 46, R = 10, T = 10, B = 24;
   const all = series.flatMap(s => s.points.map(p => s.stack ? p.top : p.v)).filter(v => v !== null);
@@ -385,6 +418,11 @@ function timeChart(box, { series, a, b, height = 220, yFmt = String, yMin, yMax,
   };
   hit.addEventListener('pointermove', move); hit.addEventListener('pointerdown', move);
   hit.addEventListener('pointerleave', () => { cross.setAttribute('visibility', 'hidden'); hideTip(); });
+  if (onPick) {   // tapping a day opens it in the day view
+    hit.style.cursor = 'pointer';
+    hit.addEventListener('click', ev => { const r = svg.getBoundingClientRect(), d = new Date(t0 + ((ev.clientX - r.left) * W / r.width - L) / (W - L - R) * span);
+      const day = new Date(d.getFullYear(), d.getMonth(), d.getDate()); if (hover(day)) { hideTip(); onPick(iso(day)); } });
+  }
 }
 
 /** Simple vertical bar chart over categories (weekdays). */
@@ -542,7 +580,7 @@ function renderDetail(P) {
   $('detail-lead').textContent = lead;
   const byDate = new Map(rows.map(r => [r.Date, r]));
   const bucketed = size === 'day' || m.col2 ? null : bucket(rows, m.col, size);
-  timeChart($('detail'), { series, a: P.start, b: P.end, yFmt: fmt, tickStep: m.tickStep, hover: d => {
+  timeChart($('detail'), { series, a: P.start, b: P.end, yFmt: fmt, tickStep: m.tickStep, onPick: bucketed || m.sparse ? null : goDay, hover: d => {
     if (bucketed) {
       const keyT = size === 'month' ? new Date(d.getFullYear(), d.getMonth(), 1).getTime() : addDays(d, -((d.getDay() + 6) % 7)).getTime();
       const p = bucketed.find(x => x.d.getTime() === keyT); if (!p || p.v === null) return null;
@@ -592,7 +630,7 @@ function renderSleep(P) {
   $('sleep-lead').textContent = `${hm(avg)} a night on average over ${int(nights.length)} night${nights.length > 1 ? 's' : ''}` + (deep !== null ? `, with ${Math.round(deep)}% deep and ${Math.round(rem)}% REM sleep.` : '.');
   const byDate = new Map(rows.map(r => [r.Date, r]));
   if (size === 'day') {
-    timeChart($('sleep'), { series: [{ points: rows.map(r => ({ d: r._d, v: r['Sleep (h)'] })), kind: 'bars', color: css('--s7') }], a: P.start, b: P.end, yMin: 0, yFmt: v => `${v} h`, height: 190,
+    timeChart($('sleep'), { series: [{ points: rows.map(r => ({ d: r._d, v: r['Sleep (h)'] })), kind: 'bars', color: css('--s7') }], a: P.start, b: P.end, yMin: 0, yFmt: v => `${v} h`, height: 190, onPick: goDay,
       hover: d => { const r = byDate.get(iso(d)); if (!r || !r['Sleep (h)']) return null;
         return { t: d.getTime() + MS_DAY / 2, html: `Night before ${fmtDay(d)}<br><b>${hm(r['Sleep (h)'])}</b>, asleep at ${clock(r['Bedtime (hrs)'])}${r.Awakenings !== null ? `<br>${r.Awakenings} times awake` : ''}` }; } });
   } else {
@@ -884,6 +922,161 @@ function renderYou(A, age) {
   if ($('h-reset')) $('h-reset').addEventListener('click', () => send(null));
 }
 
+// ------------------------------------------------------------ one day
+let DAY = null, DAYDATA = null;
+const STAGES = [['awake', 'Awake', '--s4'], ['asleepREM', 'REM', '--s1'], ['asleepCore', 'Core', '--s7'], ['asleepUnspecified', 'Asleep', '--s7'], ['asleepDeep', 'Deep', '--s3']];
+const DAY_TILES = [['Steps', 'Steps', '', int], ['Distance (km)', 'Distance', 'km', v => v.toFixed(1)], ['Exercise min', 'Exercise', 'min', int],
+  ['Active kcal', 'Active energy', 'kcal', int], ['Flights climbed', 'Flights climbed', '', int], ['Resting HR', 'Resting heart rate', 'bpm', int],
+  ['Walking HR', 'Walking heart rate', 'bpm', int], ['Sleep HRV (ms)', 'HRV, asleep', 'ms', int], ['Sleep HR', 'Heart rate, asleep', 'bpm', int],
+  ['VO2 max', 'VO₂ max', '', one], ['Blood oxygen %', 'Blood oxygen', '%', one], ['Weight (kg)', 'Weight', 'kg', one], ['Body fat %', 'Body fat', '%', one]];
+const words = t => { const s = String(t || '').replace(/([a-z])([A-Z])/g, '$1 $2').toLowerCase(); return cap(s); };
+const median = a => { if (!a.length) return null; const b = a.slice().sort((x, y) => x - y), m = b.length >> 1; return b.length % 2 ? b[m] : (b[m - 1] + b[m]) / 2; };
+
+async function openDay(ds, scroll = false) {
+  DAY = ds;
+  $('day-pick').value = ds;
+  if (scroll) $('day-sec').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  $('day-body').innerHTML = '<div class="empty">Loading…</div>';
+  try {
+    const r = await fetch('/dashboard/day?date=' + ds, { cache: 'no-store' });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const data = await r.json();
+    if (DAY !== ds) return;   // another day was picked meanwhile
+    DAYDATA = data; renderDay();
+  } catch (e) { $('day-body').innerHTML = `<div class="empty">Could not load this day (${esc(e.message)}).</div>`; }
+}
+
+/** A chart across one day. x is minutes after midnight; series: {kind:'line'|'bars', points:[[m, v]], color, w}. */
+function dayChart(box, { lo, hi, series, bands = [], height = 180, yFmt = int, yMin, hover }) {
+  box.innerHTML = '';
+  const vs = series.flatMap(s => s.points.map(p => p[1]));
+  if (!vs.length) { box.innerHTML = '<div class="empty">No readings this day.</div>'; return; }
+  const W = Math.max(280, box.clientWidth), H = height, L = 46, R = 10, T = 10, B = 24;
+  let y0 = yMin !== undefined ? yMin : Math.min(...vs), y1 = Math.max(...vs);
+  if (yMin === undefined) { const pad = (y1 - y0) * 0.1 || 1; y0 -= pad; y1 += pad; }
+  const ticks = niceTicks(y0, y1, 4); y0 = Math.min(y0, ticks[0]); y1 = Math.max(y1, ticks[ticks.length - 1]);
+  const X = m => L + (m - lo) / (hi - lo) * (W - L - R), Y = v => T + (1 - (v - y0) / (y1 - y0)) * (H - T - B);
+  const svg = el('svg', { viewBox: `0 0 ${W} ${H}`, height: H, role: 'img' }, box);
+  for (const b of bands) el('rect', { x: X(Math.max(lo, b.from)), y: T, width: Math.max(1, X(Math.min(hi, b.to)) - X(Math.max(lo, b.from))), height: H - T - B, fill: b.color, opacity: 0.16 }, svg);
+  const ax = el('g', { class: 'axis' }, svg);
+  for (const v of ticks) {
+    el('line', { x1: L, x2: W - R, y1: Y(v), y2: Y(v), stroke: css('--grid') }, ax);
+    el('text', { x: L - 6, y: Y(v) + 4, 'text-anchor': 'end' }, ax).textContent = yFmt(v);
+  }
+  const step = (hi - lo) / 60 > 18 && W < 500 ? 360 : 180;
+  for (let m = Math.ceil(lo / step) * step; m <= hi; m += step) el('text', { x: X(m), y: H - 6, 'text-anchor': m === hi ? 'end' : m === lo ? 'start' : 'middle' }, ax).textContent = clock(m / 60);
+  for (const s of series) {
+    if (s.kind === 'bars') {
+      const bw = Math.max(1, X(lo + (s.w || 60)) - X(lo) - 2);
+      for (const [m, v] of s.points) if (v) el('rect', { x: X(m) + 1, y: Y(v), width: bw, height: Math.max(1, Y(y0) - Y(v)), rx: Math.min(3, bw / 2), fill: s.color }, svg);
+    } else {
+      let d = '', prev = null;
+      for (const [m, v] of s.points) { d += `${prev !== null && m - prev <= (s.gap || 20) ? 'L' : 'M'}${X(m).toFixed(1)},${Y(v).toFixed(1)}`; prev = m; }
+      el('path', { d, fill: 'none', stroke: s.color, 'stroke-width': 1.6, 'stroke-linejoin': 'round' }, svg);
+    }
+  }
+  if (!hover) return;
+  const cross = el('line', { y1: T, y2: H - B, stroke: css('--text-3'), 'stroke-dasharray': '3 3', visibility: 'hidden' }, svg);
+  const hit = el('rect', { x: L, y: 0, width: W - L - R, height: H, fill: 'transparent' }, svg);
+  const move = ev => {
+    const r = svg.getBoundingClientRect(), px = (ev.clientX - r.left) * W / r.width, m = lo + (px - L) / (W - L - R) * (hi - lo);
+    const res = hover(m); if (!res) { cross.setAttribute('visibility', 'hidden'); hideTip(); return; }
+    const cx = X(res.m); cross.setAttribute('x1', cx); cross.setAttribute('x2', cx); cross.setAttribute('visibility', 'visible');
+    showTip(box, cx * r.width / W, ev.clientY - r.top, res.html);
+  };
+  hit.addEventListener('pointermove', move); hit.addEventListener('pointerdown', move);
+  hit.addEventListener('pointerleave', () => { cross.setAttribute('visibility', 'hidden'); hideTip(); });
+}
+
+/** The night's sleep stages, one row per stage. */
+function hypnogram(box, sl) {
+  box.innerHTML = '';
+  const rowsUsed = STAGES.filter(([k]) => sl.segments.some(g => g[0] === k));
+  const W = Math.max(280, box.clientWidth), rowH = 22, L = 56, R = 10, T = 4, B = 22, H = T + rowsUsed.length * rowH + B;
+  const lo = Math.floor(sl.start / 60) * 60, hi = Math.ceil(sl.end / 60) * 60;
+  const X = m => L + (m - lo) / (hi - lo) * (W - L - R);
+  const svg = el('svg', { viewBox: `0 0 ${W} ${H}`, height: H, role: 'img' }, box);
+  rowsUsed.forEach(([k, name, color], i) => {
+    const y = T + i * rowH;
+    el('text', { x: L - 8, y: y + 15, 'text-anchor': 'end', 'font-size': 11, fill: css('--text-3') }, svg).textContent = name;
+    el('line', { x1: L, x2: W - R, y1: y + rowH / 2, y2: y + rowH / 2, stroke: css('--grid') }, svg);
+    for (const [st, a, b] of sl.segments) if (st === k) el('rect', { x: X(a), y: y + 3, width: Math.max(1, X(b) - X(a)), height: rowH - 6, rx: 2, fill: css(color) }, svg);
+  });
+  const step = (hi - lo) > 600 ? 120 : 60;
+  for (let m = lo; m <= hi; m += step) el('text', { x: X(m), y: H - 6, 'text-anchor': m === hi ? 'end' : 'middle', 'font-size': 11, fill: css('--text-3') }, svg).textContent = clock(m / 60);
+  const hit = el('rect', { x: L, y: 0, width: W - L - R, height: H, fill: 'transparent' }, svg);
+  const move = ev => {
+    const r = svg.getBoundingClientRect(), m = lo + ((ev.clientX - r.left) * W / r.width - L) / (W - L - R) * (hi - lo);
+    const g = sl.segments.find(([, a, b]) => m >= a && m <= b);
+    if (!g) { hideTip(); return; }
+    const name = (STAGES.find(([k]) => k === g[0]) || [, g[0]])[1];
+    showTip(box, ev.clientX - r.left, ev.clientY - r.top, `<b>${esc(name)}</b><br>${clock(g[1] / 60)} to ${clock(g[2] / 60)} (${mins(g[2] - g[1])})`);
+  };
+  hit.addEventListener('pointermove', move); hit.addEventListener('pointerdown', move); hit.addEventListener('pointerleave', hideTip);
+}
+
+function renderDay() {
+  const D = DAYDATA, box = $('day-body');
+  if (!D) return;
+  const d = toDate(D.date), row = D.row || {};
+  $('day-prev').disabled = !!D.first_day && D.date <= D.first_day;
+  $('day-next').disabled = D.date >= iso(new Date());
+  if (D.first_day) $('day-pick').min = D.first_day; $('day-pick').max = iso(new Date());
+  // "Usual" = your median for the 90 days before this one.
+  const before = ROWS.filter(r => r._d < d && r._d >= addDays(d, -90));
+  const tiles = DAY_TILES.filter(([c]) => row[c] !== null && row[c] !== undefined).map(([c, name, unit, f]) => {
+    const u = median(vals(before, c));
+    return `<div class="tile"><div class="name">${esc(name)}</div><div class="value">${esc(f(row[c]))}<small>${esc(unit)}</small></div>` +
+      `<div class="usual">${u !== null && before.length >= 14 ? `usual ${esc(f(u))}` : '&nbsp;'}</div></div>`;
+  });
+  if (row['Sleep (h)']) tiles.splice(0, 0, `<div class="tile"><div class="name">Sleep</div><div class="value">${hm(row['Sleep (h)'])}</div>` +
+    `<div class="usual">${before.length >= 14 && median(vals(before, 'Sleep (h)')) !== null ? `usual ${hm(median(vals(before, 'Sleep (h)')))}` : '&nbsp;'}</div></div>`);
+  const away = D.tz !== META.home_tz ? ` · in ${esc(D.place)}` : '';
+  const sum = [];
+  if (row.Steps) sum.push(`${int(row.Steps)} steps`);
+  if (D.workouts.length) sum.push(`${D.workouts.length} workout${D.workouts.length > 1 ? 's' : ''}`);
+  if (row['Sleep (h)']) sum.push(`${hm(row['Sleep (h)'])} of sleep the night before`);
+  let h = `<h3 style="font-size:16px;margin:0 0 2px">${fmtDay(d)}${away}</h3><p class="lead">${sum.length ? esc(cap(listWords(sum))) + '.' : 'Nothing recorded this day.'}` +
+    ' “Usual” is your middle value over the 90 days before.</p>';
+  if (tiles.length) h += `<div class="tiles">${tiles.join('')}</div>`;
+  h += `<div class="daypart"><h3>Heart rate through the day</h3><div class="legend"><span><i style="background:var(--s2)"></i>Heart rate (bpm)</span>` +
+    `${D.sleep ? '<span><i style="background:var(--s7);opacity:.4"></i>Asleep</span>' : ''}${D.workouts.length ? '<span><i style="background:var(--s3);opacity:.4"></i>Workout</span>' : ''}</div><div class="chart" id="day-hr"></div></div>`;
+  h += `<div class="daypart"><h3>Steps each hour</h3><div class="chart" id="day-steps"></div></div>`;
+  if (D.sleep) {
+    const st = D.sleep.stages, part = (k, n) => st[k] ? `${n} ${mins(st[k])}` : null;
+    const parts = [part('asleepDeep', 'deep'), part('asleepCore', 'core'), part('asleepREM', 'REM'), part('awake', 'awake')].filter(Boolean);
+    h += `<div class="daypart"><h3>The night before</h3><p class="lead">Asleep ${hm(D.sleep.asleep_h)} between ${clock(D.sleep.start / 60)} and ${clock(D.sleep.end / 60)}` +
+      `${parts.length ? ': ' + esc(parts.join(', ')) : ''}. Woke ${D.sleep.awakenings} time${D.sleep.awakenings === 1 ? '' : 's'}. From ${esc(D.sleep.source || 'unknown')}.` +
+      `${D.sleep.tz !== D.tz ? ` The night's records say ${esc(D.sleep.place)} time; times here are in ${esc(D.place)} time, like the rest of the day.` : ''}</p><div class="chart" id="day-sleep"></div></div>`;
+  }
+  if (D.workouts.length) {
+    h += `<div class="daypart"><h3>Workouts</h3><div class="tablewrap" style="max-height:none"><table><tr><th>Time</th><th>Workout</th><th>Duration</th><th>Distance</th><th>Energy</th><th>Heart rate</th></tr>` +
+      D.workouts.map(w => `<tr><td>${esc(w.time)}</td><td>${esc(words(w.type))}</td><td>${mins(w.minutes)}</td><td>${w.km ? esc(w.km.toFixed(2)) + ' km' : ''}</td>` +
+        `<td>${w.kcal ? int(w.kcal) + ' kcal' : ''}</td><td>${w.avg_hr ? `${w.avg_hr} average, ${w.max_hr} max` : ''}</td></tr>`).join('') + '</table></div></div>';
+  }
+  const extra = [];
+  if (D.bp.length) extra.push('Blood pressure: ' + D.bp.map(b => `${b.systolic}/${b.diastolic} mmHg at ${b.time}`).join(', ') + '.');
+  if (D.weighins.length) extra.push('Weigh-in: ' + D.weighins.map(w => `${one(w.weight_kg)} kg${w.fat_pct ? `, ${one(w.fat_pct)}% fat` : ''} at ${w.time}`).join('; ') + '.');
+  if (extra.length) h += `<div class="daypart"><h3>Readings</h3><p class="lead">${esc(extra.join(' '))}</p></div>`;
+  box.innerHTML = h;
+
+  const bands = [];
+  if (D.sleep) bands.push({ from: D.sleep.start, to: D.sleep.end, color: css('--s7') });
+  for (const w of D.workouts) bands.push({ from: w.start, to: w.end, color: css('--s3') });
+  const lo = Math.min(0, D.sleep ? Math.floor(D.sleep.start / 60) * 60 : 0), hi = 1440;
+  dayChart($('day-hr'), { lo, hi, series: [{ kind: 'line', points: D.heart.filter(p => p[0] >= lo), color: css('--s2') }], bands, hover: m => {
+    let best = null; for (const p of D.heart) if (best === null || Math.abs(p[0] - m) < Math.abs(best[0] - m)) best = p;
+    if (!best || Math.abs(best[0] - m) > 30) return null;
+    const w = D.workouts.find(x => best[0] >= x.start && best[0] <= x.end);
+    const asleep = D.sleep && best[0] >= D.sleep.start && best[0] <= D.sleep.end;
+    return { m: best[0], html: `${clock(best[0] / 60)}<br><b>${best[1]}</b> bpm${w ? `<br>${esc(words(w.type))}` : asleep ? '<br>Asleep' : ''}` };
+  } });
+  dayChart($('day-steps'), { lo: 0, hi: 1440, series: [{ kind: 'bars', points: D.steps_hourly.map(([hr, v]) => [hr * 60, v]), color: css('--s1'), w: 60 }], yMin: 0, height: 150,
+    hover: m => { const hr = Math.floor(m / 60), p = D.steps_hourly.find(x => x[0] === hr); if (!p || !p[1]) return null;
+      return { m: hr * 60 + 30, html: `${clock(hr)} to ${clock(hr + 1)}<br><b>${int(p[1])}</b> steps` }; } });
+  if (D.sleep) hypnogram($('day-sleep'), D.sleep);
+}
+
 function renderAll(top = true) {
   hideTip();
   document.querySelectorAll('.ranges button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.range === RANGE)));
@@ -904,6 +1097,7 @@ function renderAll(top = true) {
   renderWeek(P);
   renderBP(P);
   renderBody(P);
+  if (DAY === null) openDay(iso(lastDay())); else renderDay();
 }
 
 // ------------------------------------------------------------ wiring
@@ -918,7 +1112,32 @@ const origRender = renderAll;
 renderAll = (top = true) => {
   if (!META.version) return;   // nothing loaded yet (e.g. a range tapped while loading)
   try { localStorage.setItem('hs-metric', METRIC); } catch (e) {} origRender(top);
+  // a tab whose sections are all hidden (no data of that kind yet) says so
+  $('tab-empty').hidden = [...document.querySelectorAll(`[data-tab="${TAB}"]`)].some(e => !e.hidden);
 };
+const shiftDay = n => { if (DAY) openDay(iso(addDays(toDate(DAY), n))); };
+$('day-prev').addEventListener('click', () => shiftDay(-1));
+$('day-next').addEventListener('click', () => shiftDay(1));
+$('day-latest').addEventListener('click', () => openDay(iso(lastDay())));
+$('day-pick').addEventListener('change', e => { if (e.target.value) openDay(e.target.value); });
+// Tabs: one part of the page at a time. The tab is kept in the address (#day) and remembered.
+const TABS = ['overview', 'day', 'activity', 'sleep', 'body', 'compared'];
+let TAB = 'overview';
+function setTab(t, push = true) {
+  if (!TABS.includes(t)) t = 'overview';
+  TAB = t;
+  document.querySelectorAll('[data-tab]').forEach(e => e.classList.toggle('tab-off', e.dataset.tab !== t));
+  document.querySelectorAll('#tabs button').forEach(b => b.setAttribute('aria-selected', String(b.dataset.go === t)));
+  const ranged = t !== 'day';   // the day tab has its own day picker instead of a time range
+  $('range-bar').classList.toggle('tab-off', !ranged); $('period').classList.toggle('tab-off', !ranged);
+  try { localStorage.setItem('hs-tab', t); } catch (e) {}
+  if (push && location.hash !== '#' + t) history.replaceState(null, '', '#' + t);
+  renderAll(false);   // charts are drawn at their shown width, so draw the tab now it's visible
+}
+document.querySelectorAll('#tabs button').forEach(b => b.addEventListener('click', () => { setTab(b.dataset.go); window.scrollTo({ top: 0 }); }));
+window.addEventListener('hashchange', () => setTab(location.hash.slice(1), false));
+const goDay = ds => { setTab('day'); openDay(ds); window.scrollTo({ top: 0 }); };
+{ let t = location.hash.slice(1); if (!TABS.includes(t)) { try { t = localStorage.getItem('hs-tab'); } catch (e) {} } setTab(t || 'overview', true); }
 let resizeTimer; window.addEventListener('resize', () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(() => renderAll(), 150); });
 matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => renderAll());
 
