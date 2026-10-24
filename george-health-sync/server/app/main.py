@@ -8,7 +8,7 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, StreamingResponse
 
-from . import __version__, body, config, daily as D, dailycache, dayview, db, documents, idindex, ingest, spool, timeutil as T, weighins
+from . import __version__, body, config, daily as D, dailycache, dayview, db, documents, food, idindex, ingest, spool, timeutil as T, weighins
 
 log = logging.getLogger('healthsync')
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(message)s')
@@ -226,6 +226,76 @@ def get_weighins(request: Request, from_: str = Query(None, alias='from'), to: s
     return dict(fields=weighins.FIELDS, weighins=weighins.rows(db.reader(), f, t))
 
 
+@app.post('/api/v1/food')
+async def post_food(request: Request):
+    """Food log entries from the app: {"food": [{id, logged_at, time_zone, meal, name, brand, barcode, source,
+    serving_g, kcal, protein_g, carbs_g, fat_g, sat_fat_g, sugar_g, fibre_g, salt_g, ...}]}, gzip or plain. id is the
+    uuid of the entry's DietaryEnergyConsumed sample; an id already stored is a duplicate. Fields not listed are kept too (extra).
+    Reply {accepted, duplicates, rejected}."""
+    auth(request)
+    raw = await request.body()
+    enc = request.headers.get('content-encoding', '').lower().strip()
+
+    def work():
+        b = _have_body(raw, enc)
+        items = b.get('food') if isinstance(b, dict) else None
+        if not isinstance(items, list):
+            raise spool.BadBody(400, 'expected {"food": [...]}')
+        if len(items) > 5000:
+            raise spool.BadBody(413, 'at most 5,000 food entries per request')
+        with db.write_lock:
+            con = db.writer()
+            try:
+                with con:
+                    return food.store(con, items)
+            except Exception:
+                log.exception('storing food entries failed')
+                raise
+    try:
+        res = await run_in_threadpool(work)
+    except spool.BadBody as e:
+        raise HTTPException(e.status, str(e))
+    log.info('POST food: %d new, %d duplicates, %d rejected', res['accepted'], res['duplicates'], len(res['rejected']))
+    return res
+
+
+@app.get('/api/v1/food')
+def get_food(request: Request, from_: str = Query(None, alias='from'), to: str = None):
+    """Every food log entry, newest first (deleted ones left out). from/to are UTC dates (inclusive), both optional."""
+    auth(request)
+    f = _date(from_, 'from') if from_ else None
+    t = _date(to, 'to') if to else None
+    return dict(fields=food.FIELDS, food=food.rows(db.reader(), f, t))
+
+
+@app.get('/api/v1/food/target')
+def get_food_target(request: Request):
+    """The current daily food target the phone last sent, or {"target": null}."""
+    auth(request)
+    return dict(target=food.target(db.reader()))
+
+
+@app.put('/api/v1/food/target')
+async def put_food_target(request: Request):
+    """Set the daily food target: {"kcal": 2200, "protein_g": 160, "carbs_g": 220, "fat_g": 70, "fibre_g": 30}
+    (kcal required; others optional; extra keys kept). Replaces the previous one."""
+    auth(request)
+    try:
+        body = await request.json()
+    except ValueError:
+        raise HTTPException(400, 'expected JSON')
+
+    def work():
+        with db.write_lock:
+            con = db.writer()
+            with con:
+                return food.set_target(con, body)
+    try:
+        return dict(target=await run_in_threadpool(work))
+    except ingest.Reject as e:
+        raise HTTPException(400, str(e))
+
+
 @app.put('/api/v1/documents/{doc_id}')
 async def put_document(doc_id: str, request: Request):
     """Store or replace a document: {"kind", "title", "issued_on": "YYYY-MM-DD", "provider", "notes", "structured": {...},
@@ -305,6 +375,7 @@ EXPORT_TABLES = {   # type name -> (table, time column)
     'HKWorkoutTypeIdentifier': ('workouts', 'start_utc'),
     'HKDataTypeIdentifierElectrocardiogram': ('ecgs', 'time_utc'),
     'weighins': ('weighins', 'measured_at'),
+    'food_log': ('food_log', 'logged_at'),
 }
 
 
@@ -331,7 +402,7 @@ def get_day(request: Request, date: str):
 @app.get('/api/v1/export')
 def get_export(request: Request, from_: str = Query(None, alias='from'), to: str = None, types: str = None,
                include_deleted: bool = False):
-    """Raw records as JSON: {"samples": [...], "sleep": [...], "workouts": [...], "ecgs": [...]}.
+    """Raw records as JSON: {"samples": [...], "sleep": [...], "workouts": [...], "ecgs": [...], "weighins": [...], "food_log": [...]}.
     from/to are UTC dates (to inclusive) or ISO times (to exclusive). types = comma-separated HealthKit identifiers."""
     auth(request)
     lo, hi = _bound(from_, 'from'), _bound(to, 'to', end=True)
@@ -339,7 +410,8 @@ def get_export(request: Request, from_: str = Query(None, alias='from'), to: str
     sample_types = [t for t in want if t not in EXPORT_TABLES] if want else None
     parts = [('samples', 'samples', 'start_utc', sample_types)]
     for name, key in (('HKCategoryTypeIdentifierSleepAnalysis', 'sleep'), ('HKWorkoutTypeIdentifier', 'workouts'),
-                      ('HKDataTypeIdentifierElectrocardiogram', 'ecgs'), ('weighins', 'weighins')):
+                      ('HKDataTypeIdentifierElectrocardiogram', 'ecgs'), ('weighins', 'weighins'),
+                      ('food_log', 'food_log')):
         if not want or name in want:
             parts.append((key, *EXPORT_TABLES[name], None))
     if want and not sample_types:
@@ -403,6 +475,8 @@ def dashboard_data():
                 home_tz=config.HOME_TZ,
                 columns=D.COLUMNS, rows=[[r.get(c) for c in D.COLUMNS] for r in rows],
                 body_fields=body.FIELDS, body=[[w[f] for f in body.FIELDS] for w in body.readings(con)],
+                food_fields=food.FIELDS, food=[[f[k] for k in food.FIELDS] for f in food.rows(con, newest_first=False)],
+                food_target=food.target(con),
                 about=about_you(con))
 
 

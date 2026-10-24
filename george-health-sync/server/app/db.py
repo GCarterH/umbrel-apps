@@ -131,6 +131,33 @@ CREATE TABLE IF NOT EXISTS weighins (
 );
 CREATE INDEX IF NOT EXISTS weighins_time ON weighins (measured_at);
 
+-- Food log entries from the Health Sync app (POST /api/v1/food, food.py). id is the uuid of the entry's
+-- DietaryEnergyConsumed sample, so deleting that sample on the phone deletes the entry. Any field not listed is kept
+-- in extra_json.
+CREATE TABLE IF NOT EXISTS food_log (
+    id TEXT PRIMARY KEY,
+    logged_at TEXT NOT NULL,
+    time_zone TEXT NOT NULL,
+    meal TEXT,
+    name TEXT NOT NULL,
+    brand TEXT,
+    barcode TEXT,
+    source TEXT,
+    serving_g REAL,
+    kcal REAL NOT NULL,
+    protein_g REAL,
+    carbs_g REAL,
+    fat_g REAL,
+    sat_fat_g REAL,
+    sugar_g REAL,
+    fibre_g REAL,
+    salt_g REAL,
+    extra_json TEXT,
+    received_at TEXT NOT NULL,
+    deleted_at TEXT
+);
+CREATE INDEX IF NOT EXISTS food_log_time ON food_log (logged_at);
+
 -- Reports and results kept with the health data (documents.py), e.g. the pharmacogenomic report. Never expire.
 -- The file itself is in data/documents/<file_sha256><ext>.
 CREATE TABLE IF NOT EXISTS documents (

@@ -269,6 +269,8 @@ def deletions(con, records):
         cur = con.execute('INSERT OR IGNORE INTO deletions (uuid, type, deleted_at) VALUES (?,?,?)', (uid, typ, now))
         # A scale weigh-in's id is its BodyMass sample's uuid: deleting the weight in Health deletes the weigh-in too.
         con.execute('UPDATE weighins SET deleted_at = ? WHERE id = ? AND deleted_at IS NULL', (now, uid))
+        # A food log entry's id is its DietaryEnergyConsumed sample's uuid: Undo or delete on the phone deletes it here.
+        con.execute('UPDATE food_log SET deleted_at = ? WHERE id = ? AND deleted_at IS NULL', (now, uid))
         if cur.rowcount:
             accepted += 1
         else:

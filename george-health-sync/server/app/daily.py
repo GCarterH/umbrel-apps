@@ -9,6 +9,9 @@ Rules, matching the spreadsheet:
   lean mass are the day's latest reading. Blood pressure is the day's first systolic/diastolic pair.
 - Sleep is listed on the morning you woke up. Only nights with at least 3 hours asleep count; if several apps
   tracked the same night, the session that started latest is used (as the spreadsheet does).
+- Food (Calories in, Protein/Carbs/Fat/Fibre g) is the day's Dietary samples added up. Where several apps logged
+  the same meal, the Health Sync app's food log wins; another app's entries count only when they're more than 30
+  minutes from any of its entries.
 - Records loaded from the old Health Export Kit files (uuid starting 'hek:') are only used for a day (or night,
   or workout) the phone hasn't sent its own data for.
 """
@@ -29,6 +32,12 @@ PRESENCE = [HK + 'HeartRateRecoveryOneMinute', HK + 'AppleSleepingBreathingDistu
 # Blood pressure: the day's first reading (usually the morning one). A reading is a systolic and a diastolic
 # sample with the same start time.
 BP = {'Systolic BP': HK + 'BloodPressureSystolic', 'Diastolic BP': HK + 'BloodPressureDiastolic'}
+# Food: the day's totals of what was eaten. Where several apps logged the same meal, the Health Sync app's food log
+# wins and another app's entries only count when they're more than FOOD_MARGIN from any of its entries (the same
+# fill-the-gaps rule as steps, with food apps in place of the Watch and iPhone).
+FOOD = {'Calories in': HK + 'DietaryEnergyConsumed', 'Protein g': HK + 'DietaryProtein', 'Carbs g': HK + 'DietaryCarbohydrates',
+        'Fat g': HK + 'DietaryFatTotal', 'Fibre g': HK + 'DietaryFiber'}
+FOOD_MARGIN = 30 * 60
 HEART_RATE, HRV = HK + 'HeartRate', HK + 'HeartRateVariabilitySDNN'
 # Night summaries from Health Export Kit files: awakenings and sleep HR/HRV, which need raw data the exports don't have.
 IMPORTED_NIGHT = 'HEKSleepSession'
@@ -44,7 +53,8 @@ COLUMNS = ['Date', 'Week starting', 'Month', 'Year', 'Where', 'Steps', 'Distance
            'Flights climbed', 'Resting HR', 'Walking HR', 'VO2 max', 'Blood oxygen %', 'Sleep (h)', 'Bedtime (hrs)', 'Bedtime',
            'Deep %', 'REM %', 'Awakenings', 'Sleep HR', 'Sleep HRV (ms)', 'Weight (kg)', 'Body fat %', 'Lean mass (kg)',
            'Workouts', 'Walking min', 'Cycling min', 'Running min', 'Strength min', 'Other workout min',
-           'Systolic BP', 'Diastolic BP', 'BP time']   # not in the Daily tab yet
+           'Systolic BP', 'Diastolic BP', 'BP time',   # not in the Daily tab yet
+           'Calories in', 'Protein g', 'Carbs g', 'Fat g', 'Fibre g']
 
 
 def imported(uuid):
@@ -59,6 +69,12 @@ def priority(source, device):
     if d.startswith('iPhone') or 'iPhone' in s:
         return 1
     return 2
+
+
+def food_rank(source, device):
+    """Lower wins when food apps overlap: the Health Sync app's own food log first."""
+    s = (source or '').lower().replace(' ', '')
+    return 0 if 'healthsync' in s else 1
 
 
 def wtype(t):
@@ -112,14 +128,16 @@ def _inside(covered, t):
 COVER_MARGIN = 300
 
 
-def dedup_sum(rows, into=None):
+def dedup_sum(rows, into=None, rank=None, margin=COVER_MARGIN):
     """Sum a day's cumulative samples like the Health app: the Watch wins where both counted, and the iPhone
     (then other apps) only fills the time the Watch didn't cover, pro rata. Within one source, samples are summed
     as the Health app does, except exact repeats (same start, end and value), which count once.
-    into: optional (dict, key function); each record's share is also added to dict[key(record)] (e.g. by hour)."""
+    into: optional (dict, key function); each record's share is also added to dict[key(record)] (e.g. by hour).
+    rank/margin: which source wins (lower first; default Watch, iPhone, others) and how far either side of its
+    records it counts as covering (default COVER_MARGIN)."""
     groups = defaultdict(list)
     for r in rows:
-        groups[(priority(r['source'], r['device']), r['source'] or '')].append(r)
+        groups[((rank or priority)(r['source'], r['device']), r['source'] or '')].append(r)
     covered, total = [], 0.0
     for key in sorted(groups):
         seen, mine = set(), []
@@ -137,7 +155,7 @@ def dedup_sum(rows, into=None):
                 into[0][into[1](r)] += part
             mine.append((s, e))
         for s, e in mine:
-            _add(covered, s - COVER_MARGIN, e + COVER_MARGIN)
+            _add(covered, s - margin, e + margin)
     return total
 
 
@@ -267,7 +285,7 @@ def daily(con, date_from, date_to):
     hi = (d1 + dt.timedelta(days=3)).isoformat() + 'T00:00:00Z'
     in_range = lambda ds: date_from <= ds <= date_to
 
-    types = list(CUM.values()) + list(AVG.values()) + list(LATEST.values()) + PRESENCE + list(BP.values())
+    types = list(CUM.values()) + list(AVG.values()) + list(LATEST.values()) + PRESENCE + list(BP.values()) + list(FOOD.values())
     q = 'SELECT uuid, type, start_utc, end_utc, tz, value, source, device FROM samples WHERE type IN (%s) ' \
         'AND start_utc >= ? AND start_utc < ? AND deleted_at IS NULL AND value IS NOT NULL' % ','.join('?' * len(types))
     by = defaultdict(lambda: defaultdict(list))   # type -> date -> rows
@@ -296,7 +314,7 @@ def daily(con, date_from, date_to):
 
     steps_days = {d for d, rows in by[CUM['Steps']].items() if dedup_sum(pick(rows))}
     dates = set(steps_days) | set(nights) | set(wk)
-    for t in list(AVG.values()) + list(LATEST.values()) + PRESENCE + list(BP.values()):
+    for t in list(AVG.values()) + list(LATEST.values()) + PRESENCE + list(BP.values()) + list(FOOD.values()):
         dates |= set(by[t])
 
     out = []
@@ -324,6 +342,11 @@ def daily(con, date_from, date_to):
             t, s, d = pairs[0]
             row.update({'Systolic BP': round(s['value']), 'Diastolic BP': round(d['value']),
                         'BP time': T.local(t, s['tz']).strftime('%H:%M')})
+        for k, t in FOOD.items():
+            rs = pick(by[t].get(ds, []))
+            if rs:
+                v = dedup_sum(rs, rank=food_rank, margin=FOOD_MARGIN)
+                row[k] = round(v) if k == 'Calories in' else round(v, 1)
         c = nights.get(ds)
         if c:
             b = bed_hours(c)
