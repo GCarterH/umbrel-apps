@@ -2,7 +2,7 @@ manifestVersion: 1
 id: george-health-sync
 category: files
 name: Health Sync
-version: "0.2.7"
+version: "0.2.8"
 tagline: Keep your Apple Health data on your Umbrel
 description: >-
   Receives Apple Health records from the Health Sync iPhone app and stores them in a SQLite
@@ -23,4 +23,4 @@ defaultUsername: ""
 defaultPassword: ""
 submitter: George Hay
 submission: ""
-releaseNotes: "Food log: the app's food entries are stored on the Umbrel, daily calories and macros are added up (no double counting across apps), and a new Food tab shows intake against your target."
+releaseNotes: "A weekly check-in in plain words on the dashboard (weight trend, body composition, food, sleep, anything outside your usual range, doses), personal baselines, and a medication dose log for the app."
