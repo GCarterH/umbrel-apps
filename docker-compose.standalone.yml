@@ -1,0 +1,32 @@
+# Health Sync on any machine with Docker (not Umbrel): docker compose -f docker-compose.standalone.yml up -d
+# Runs the server code in this repo (george-health-sync/server) on the stock Python image. Data (database and API
+# token) goes in ./data. See the README for what each setting does.
+services:
+  health-sync:
+    image: python:3.12.7-slim
+    restart: unless-stopped
+    ports:
+      - "8787:8787"
+    volumes:
+      - ./george-health-sync/server:/code:ro
+      - ./data:/data
+    working_dir: /code
+    environment:
+      HOME: /data
+      PYTHONDONTWRITEBYTECODE: "1"
+      PYTHONUNBUFFERED: "1"
+      PYTHONPATH: /data/pylib
+      HEALTHSYNC_DATA_DIR: /data
+      HEALTHSYNC_HOME_TZ: Europe/London                  # your time zone
+      HEALTHSYNC_PUBLIC_URL: http://192.168.1.10:8787    # the address your phone will use
+      HEALTHSYNC_SETUP_PAGE: "0"                         # "1" = dashboard and setup page on (no login of their own)
+    # Installs the three Python packages into ./data/pylib on first start (and when requirements.txt changes), then starts.
+    command:
+      - sh
+      - -c
+      - |
+        if ! cmp -s requirements.txt /data/pylib/requirements.txt; then
+          pip install --no-cache-dir --disable-pip-version-check --upgrade --target /data/pylib -r requirements.txt &&
+          cp requirements.txt /data/pylib/requirements.txt
+        fi
+        exec python -m uvicorn app.main:app --host 0.0.0.0 --port 8787 --proxy-headers --forwarded-allow-ips "*"
