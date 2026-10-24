@@ -8,7 +8,7 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, StreamingResponse
 
-from . import __version__, body, config, daily as D, dailycache, dayview, db, documents, food, idindex, ingest, spool, timeutil as T, weighins
+from . import __version__, body, config, daily as D, dailycache, dayview, db, documents, doses, food, insights, idindex, ingest, spool, timeutil as T, weighins
 
 log = logging.getLogger('healthsync')
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(message)s')
@@ -268,6 +268,74 @@ def get_food(request: Request, from_: str = Query(None, alias='from'), to: str =
     return dict(fields=food.FIELDS, food=food.rows(db.reader(), f, t))
 
 
+@app.post('/api/v1/doses')
+async def post_doses(request: Request):
+    """Medication doses from the app: {"doses": [{id, taken_at, time_zone, drug, dose_mg, site, notes, ...}]}, gzip or
+    plain. site is abdomen-left/right, thigh-left/right, arm-left/right or null. An id already stored is a duplicate.
+    Fields not listed are kept too (extra). Reply {accepted, duplicates, rejected}."""
+    auth(request)
+    raw = await request.body()
+    enc = request.headers.get('content-encoding', '').lower().strip()
+
+    def work():
+        b = _have_body(raw, enc)
+        items = b.get('doses') if isinstance(b, dict) else None
+        if not isinstance(items, list):
+            raise spool.BadBody(400, 'expected {"doses": [...]}')
+        if len(items) > 5000:
+            raise spool.BadBody(413, 'at most 5,000 doses per request')
+        with db.write_lock:
+            con = db.writer()
+            with con:
+                return doses.store(con, items)
+    try:
+        res = await run_in_threadpool(work)
+    except spool.BadBody as e:
+        raise HTTPException(e.status, str(e))
+    log.info('POST doses: %d new, %d duplicates, %d rejected', res['accepted'], res['duplicates'], len(res['rejected']))
+    return res
+
+
+@app.get('/api/v1/doses')
+def get_doses(request: Request, from_: str = Query(None, alias='from'), to: str = None):
+    """Every dose, newest first (deleted ones left out). from/to are UTC dates (inclusive), both optional."""
+    auth(request)
+    f = _date(from_, 'from') if from_ else None
+    t = _date(to, 'to') if to else None
+    return dict(fields=doses.FIELDS, doses=doses.rows(db.reader(), f, t))
+
+
+@app.delete('/api/v1/doses/{dose_id}')
+async def delete_dose(dose_id: str, request: Request):
+    """Delete a dose (the row is kept, marked deleted). 404 if there's no such dose, or it's already deleted."""
+    auth(request)
+
+    def work():
+        with db.write_lock:
+            con = db.writer()
+            with con:
+                return doses.delete(con, dose_id)
+    if not await run_in_threadpool(work):
+        raise HTTPException(404, 'no such dose')
+    return dict(deleted=dose_id)
+
+
+@app.get('/api/v1/baselines')
+def get_baselines(request: Request):
+    """Your usual range for each daily measure (mean ± 1.5 sd of days 8–97 back, at least 30 days with data), the
+    last 7 days' mean, whether that's normal, high or low, and how many recent days in a row were outside the range."""
+    auth(request)
+    return insights.baselines(db.reader())
+
+
+@app.get('/api/v1/checkin')
+def get_checkin(request: Request, week: str = None):
+    """The weekly check-in for the week starting on (or containing) `week` (YYYY-MM-DD; weeks start on Monday),
+    default the last complete week: {week_start, week_end, generated_at, lines: [{kind, text, tone}]}."""
+    auth(request)
+    return insights.checkin(db.reader(), dt.date.fromisoformat(_date(week, 'week')) if week else None)
+
+
 @app.get('/api/v1/food/target')
 def get_food_target(request: Request):
     """The current daily food target the phone last sent, or {"target": null}."""
@@ -376,6 +444,7 @@ EXPORT_TABLES = {   # type name -> (table, time column)
     'HKDataTypeIdentifierElectrocardiogram': ('ecgs', 'time_utc'),
     'weighins': ('weighins', 'measured_at'),
     'food_log': ('food_log', 'logged_at'),
+    'doses': ('doses', 'taken_at'),
 }
 
 
@@ -402,7 +471,7 @@ def get_day(request: Request, date: str):
 @app.get('/api/v1/export')
 def get_export(request: Request, from_: str = Query(None, alias='from'), to: str = None, types: str = None,
                include_deleted: bool = False):
-    """Raw records as JSON: {"samples": [...], "sleep": [...], "workouts": [...], "ecgs": [...], "weighins": [...], "food_log": [...]}.
+    """Raw records as JSON: {"samples": [...], "sleep": [...], "workouts": [...], "ecgs": [...], "weighins": [...], "food_log": [...], "doses": [...]}.
     from/to are UTC dates (to inclusive) or ISO times (to exclusive). types = comma-separated HealthKit identifiers."""
     auth(request)
     lo, hi = _bound(from_, 'from'), _bound(to, 'to', end=True)
@@ -411,7 +480,7 @@ def get_export(request: Request, from_: str = Query(None, alias='from'), to: str
     parts = [('samples', 'samples', 'start_utc', sample_types)]
     for name, key in (('HKCategoryTypeIdentifierSleepAnalysis', 'sleep'), ('HKWorkoutTypeIdentifier', 'workouts'),
                       ('HKDataTypeIdentifierElectrocardiogram', 'ecgs'), ('weighins', 'weighins'),
-                      ('food_log', 'food_log')):
+                      ('food_log', 'food_log'), ('doses', 'doses')):
         if not want or name in want:
             parts.append((key, *EXPORT_TABLES[name], None))
     if want and not sample_types:
@@ -509,6 +578,14 @@ def dashboard_day(date: str):
     if not config.SETUP_PAGE:
         raise HTTPException(404)
     return dayview.day(db.reader(), _date(date, 'date'))
+
+
+@app.get('/dashboard/checkin')
+def dashboard_checkin(week: str = None):
+    """The dashboard's weekly check-in (same as /api/v1/checkin), behind the Umbrel login."""
+    if not config.SETUP_PAGE:
+        raise HTTPException(404)
+    return insights.checkin(db.reader(), dt.date.fromisoformat(_date(week, 'week')) if week else None)
 
 
 @app.post('/dashboard/height')

@@ -158,6 +158,22 @@ CREATE TABLE IF NOT EXISTS food_log (
 );
 CREATE INDEX IF NOT EXISTS food_log_time ON food_log (logged_at);
 
+-- Medication doses from the Health Sync app's dose log (POST /api/v1/doses, doses.py), e.g. tirzepatide injections.
+-- id is the phone's UUID. DELETE /api/v1/doses/{id} sets deleted_at. Any field not listed is kept in extra_json.
+CREATE TABLE IF NOT EXISTS doses (
+    id TEXT PRIMARY KEY,
+    taken_at TEXT NOT NULL,
+    time_zone TEXT NOT NULL,
+    drug TEXT NOT NULL,
+    dose_mg REAL,
+    site TEXT,
+    notes TEXT,
+    extra_json TEXT,
+    received_at TEXT NOT NULL,
+    deleted_at TEXT
+);
+CREATE INDEX IF NOT EXISTS doses_time ON doses (taken_at);
+
 -- Reports and results kept with the health data (documents.py), e.g. the pharmacogenomic report. Never expire.
 -- The file itself is in data/documents/<file_sha256><ext>.
 CREATE TABLE IF NOT EXISTS documents (

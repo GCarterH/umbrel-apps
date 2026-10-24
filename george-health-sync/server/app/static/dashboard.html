@@ -113,6 +113,12 @@ footer { color: var(--text-3); font-size: 12px; margin-top: 24px; }
 .mcard .usual { color: var(--text-3); font-size: 12px; min-height: 16px; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
 .mcard .mini { margin-top: auto; }
 .mcard:has(.mini) .usual { -webkit-line-clamp: 2; }   /* leave the chart its room */
+.ckcards { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); grid-auto-rows: 1fr; gap: 10px; }
+.ckcard { background: var(--raised); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; display: flex; flex-direction: column; gap: 6px; font-size: 14px; }
+.ckcard .head { display: flex; align-items: center; gap: 8px; color: var(--text-2); font-size: 12px; font-weight: 600; }
+.ckcard .tone { margin-left: auto; font-weight: 600; font-size: 12px; padding: 1px 8px; border-radius: 999px; }
+.ckcard .tone.good { color: var(--s3); border: 1px solid var(--s3); }
+.ckcard .tone.watch { color: var(--s4); border: 1px solid var(--s4); }
 .mcards.five { grid-template-columns: repeat(5, minmax(0, 1fr)); }
 @media (max-width: 960px) { .mcards.five { grid-template-columns: 1fr; } }
 
@@ -140,6 +146,13 @@ footer { color: var(--text-3); font-size: 12px; margin-top: 24px; }
   </div>
   <div class="period" id="period"></div>
   <div id="banner"></div>
+
+  <section id="checkin-sec" data-tab="overview">
+    <div class="chart-head"><h2 id="checkin-title">Your week</h2><div class="spacer"></div>
+      <div class="daynav" style="margin:0"><button id="ck-prev" aria-label="Week before">‹</button><button id="ck-next" aria-label="Week after">›</button></div></div>
+    <p class="lead" id="checkin-lead"></p>
+    <div class="ckcards" id="checkin"></div>
+  </section>
 
   <section id="changes-sec" data-tab="overview">
     <h2>What changed</h2>
@@ -721,6 +734,29 @@ const BODY_COLS = [['weight_kg', 'Weight', 'kg', one], ['fat_pct', 'Body fat', '
   ['visceral_fat', 'Visceral fat', '', one], ['bmr_kcal', 'BMR', 'kcal', int], ['protein_pct', 'Protein', '%', one],
   ['impedance_ohms', 'Impedance', 'Ω', int], ['bmi', 'BMI', '', one]];
 
+// ------------------------------------------------------------ weekly check-in
+// Plain sentences from the server (/dashboard/checkin), one card each, all the same size. Default: last complete week.
+let CK_WEEK = null, CK = null;
+const CK_KIND = { weight: 'Weight', body: 'Body composition', food: 'Food', sleep: 'Sleep', baseline: 'Outside your usual range', doses: 'Doses' };
+async function loadCheckin(week) {
+  try {
+    const r = await fetch('/dashboard/checkin' + (week ? '?week=' + week : ''), { cache: 'no-store' });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    CK = await r.json(); CK_WEEK = CK.week_start; renderCheckin();
+  } catch (e) { $('checkin').innerHTML = `<div class="empty">Could not load the check-in (${esc(e.message)}).</div>`; }
+}
+function renderCheckin() {
+  if (!CK) return;
+  const a = toDate(CK.week_start), b = toDate(CK.week_end);
+  const latest = iso(addDays(toDate(iso(new Date())), -((new Date().getDay() + 6) % 7) - 7));
+  $('checkin-title').textContent = CK.week_start === latest ? 'Your week' : 'Week check-in';
+  $('checkin-lead').textContent = `${fmtDay(a)} to ${fmtDay(b)}.` + (CK.lines.length ? '' : ' Nothing to report for this week.');
+  $('ck-next').disabled = CK.week_start >= latest;
+  $('checkin').innerHTML = CK.lines.map(l => `<div class="ckcard"><div class="head">${esc(CK_KIND[l.kind] || cap(l.kind))}` +
+    (l.tone === 'good' ? '<span class="tone good">Going well</span>' : l.tone === 'watch' ? '<span class="tone watch">Worth a look</span>' : '') +
+    `</div><div>${esc(cap(l.text.replace(/^(Food|Sleep|Doses?): /, '')))}</div></div>`).join('');   // the card's heading already says it
+}
+
 // ------------------------------------------------------------ food
 // Daily totals come from the daily summary (Apple Health's Dietary samples, the Health Sync app's log first); the
 // entries themselves from the app's food log. Averages are over the days something was logged.
@@ -1254,6 +1290,7 @@ function renderAll(top = true) {
   renderBP(P);
   renderBody(P);
   renderFood(P);
+  if (CK === null && CK_WEEK === null) { CK_WEEK = ''; loadCheckin(); }
   if (DAY === null) openDay(iso(lastDay())); else renderDay();
 }
 
@@ -1295,6 +1332,8 @@ document.querySelectorAll('#tabs button').forEach(b => b.addEventListener('click
 window.addEventListener('hashchange', () => setTab(location.hash.slice(1), false));
 const goDay = ds => { setTab('day'); openDay(ds); window.scrollTo({ top: 0 }); };
 { let t = location.hash.slice(1); if (!TABS.includes(t)) { try { t = localStorage.getItem('hs-tab'); } catch (e) {} } setTab(t || 'overview', true); }
+$('ck-prev').addEventListener('click', () => CK_WEEK && loadCheckin(iso(addDays(toDate(CK_WEEK), -7))));
+$('ck-next').addEventListener('click', () => CK_WEEK && loadCheckin(iso(addDays(toDate(CK_WEEK), 7))));
 let resizeTimer; window.addEventListener('resize', () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(() => renderAll(), 150); });
 matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => renderAll());
 
