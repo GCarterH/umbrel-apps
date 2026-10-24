@@ -271,6 +271,8 @@ def deletions(con, records):
         con.execute('UPDATE weighins SET deleted_at = ? WHERE id = ? AND deleted_at IS NULL', (now, uid))
         # A food log entry's id is its DietaryEnergyConsumed sample's uuid: Undo or delete on the phone deletes it here.
         con.execute('UPDATE food_log SET deleted_at = ? WHERE id = ? AND deleted_at IS NULL', (now, uid))
+        # A training session goes with its Apple Health workout.
+        con.execute('UPDATE training_sessions SET deleted_at = ? WHERE hk_workout_uuid = ? AND deleted_at IS NULL', (now, uid))
         if cur.rowcount:
             accepted += 1
         else:

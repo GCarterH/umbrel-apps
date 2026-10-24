@@ -8,7 +8,7 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, StreamingResponse
 
-from . import __version__, body, config, daily as D, dailycache, dayview, db, documents, doses, food, insights, idindex, ingest, spool, timeutil as T, weighins
+from . import __version__, body, config, daily as D, dailycache, dayview, db, documents, doses, food, insights, training, idindex, ingest, spool, timeutil as T, weighins
 
 log = logging.getLogger('healthsync')
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(message)s')
@@ -320,6 +320,59 @@ async def delete_dose(dose_id: str, request: Request):
     return dict(deleted=dose_id)
 
 
+@app.post('/api/v1/training')
+async def post_training(request: Request):
+    """Strength-training sessions with their sets, from the app's workout tracker: one session object, or
+    {"sessions": [...]}; gzip or plain. Each session {id, started, ended, time_zone, name, plan_day, hk_workout_uuid,
+    notes, exercises: [{exercise_id, name, order, sets: [{order, kind, weight_kg, reps, rir, done_at}]}]} is upserted by
+    id (sending it again replaces it and its sets). Reply {accepted (new), updated, rejected}."""
+    auth(request)
+    raw = await request.body()
+    enc = request.headers.get('content-encoding', '').lower().strip()
+
+    def work():
+        b = _have_body(raw, enc)
+        items = b.get('sessions') if isinstance(b, dict) and 'sessions' in b else [b] if isinstance(b, dict) and 'id' in b else None
+        if not isinstance(items, list):
+            raise spool.BadBody(400, 'expected a session object or {"sessions": [...]}')
+        if len(items) > 1000:
+            raise spool.BadBody(413, 'at most 1,000 sessions per request')
+        with db.write_lock:
+            con = db.writer()
+            with con:
+                return training.store(con, items)
+    try:
+        res = await run_in_threadpool(work)
+    except spool.BadBody as e:
+        raise HTTPException(e.status, str(e))
+    log.info('POST training: %d new, %d updated, %d rejected', res['accepted'], res['updated'], len(res['rejected']))
+    return res
+
+
+@app.get('/api/v1/training')
+def get_training(request: Request, from_: str = Query(None, alias='from'), to: str = None):
+    """Training sessions with their exercises and sets, newest first (deleted ones left out). from/to are UTC dates."""
+    auth(request)
+    f = _date(from_, 'from') if from_ else None
+    t = _date(to, 'to') if to else None
+    return dict(fields=training.FIELDS, sessions=training.rows(db.reader(), f, t))
+
+
+@app.delete('/api/v1/training/{session_id}')
+async def delete_training(session_id: str, request: Request):
+    """Delete a training session (kept, marked deleted). 404 if there's no such session, or it's already deleted."""
+    auth(request)
+
+    def work():
+        with db.write_lock:
+            con = db.writer()
+            with con:
+                return training.delete(con, session_id)
+    if not await run_in_threadpool(work):
+        raise HTTPException(404, 'no such session')
+    return dict(deleted=session_id)
+
+
 @app.get('/api/v1/baselines')
 def get_baselines(request: Request):
     """Your usual range for each daily measure (mean ± 1.5 sd of days 8–97 back, at least 30 days with data), the
@@ -445,6 +498,7 @@ EXPORT_TABLES = {   # type name -> (table, time column)
     'weighins': ('weighins', 'measured_at'),
     'food_log': ('food_log', 'logged_at'),
     'doses': ('doses', 'taken_at'),
+    'training': ('training_sessions', 'started'),
 }
 
 
@@ -471,7 +525,7 @@ def get_day(request: Request, date: str):
 @app.get('/api/v1/export')
 def get_export(request: Request, from_: str = Query(None, alias='from'), to: str = None, types: str = None,
                include_deleted: bool = False):
-    """Raw records as JSON: {"samples": [...], "sleep": [...], "workouts": [...], "ecgs": [...], "weighins": [...], "food_log": [...], "doses": [...]}.
+    """Raw records as JSON: {"samples": [...], "sleep": [...], "workouts": [...], "ecgs": [...], "weighins": [...], "food_log": [...], "doses": [...], "training": [...]}.
     from/to are UTC dates (to inclusive) or ISO times (to exclusive). types = comma-separated HealthKit identifiers."""
     auth(request)
     lo, hi = _bound(from_, 'from'), _bound(to, 'to', end=True)
@@ -480,7 +534,7 @@ def get_export(request: Request, from_: str = Query(None, alias='from'), to: str
     parts = [('samples', 'samples', 'start_utc', sample_types)]
     for name, key in (('HKCategoryTypeIdentifierSleepAnalysis', 'sleep'), ('HKWorkoutTypeIdentifier', 'workouts'),
                       ('HKDataTypeIdentifierElectrocardiogram', 'ecgs'), ('weighins', 'weighins'),
-                      ('food_log', 'food_log'), ('doses', 'doses')):
+                      ('food_log', 'food_log'), ('doses', 'doses'), ('training', 'training')):
         if not want or name in want:
             parts.append((key, *EXPORT_TABLES[name], None))
     if want and not sample_types:
@@ -504,6 +558,8 @@ def get_export(request: Request, from_: str = Query(None, alias='from'), to: str
                     for k in ('metadata_json', 'weather_json', 'profile_json', 'extra_json'):
                         if k in d:
                             d[k[:-5]] = json.loads(d.pop(k)) if d[k] else None
+                    if table == 'training_sessions':
+                        d['exercises'] = training._exercises(con, d['id'])
                     if table == 'workouts':
                         d['hr'] = [{'t': t, 'bpm': b} for t, b in con.execute(
                             'SELECT t_utc, bpm FROM workout_hr WHERE workout_uuid = ? ORDER BY t_utc', (d['uuid'],))]

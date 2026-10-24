@@ -737,7 +737,7 @@ const BODY_COLS = [['weight_kg', 'Weight', 'kg', one], ['fat_pct', 'Body fat', '
 // ------------------------------------------------------------ weekly check-in
 // Plain sentences from the server (/dashboard/checkin), one card each, all the same size. Default: last complete week.
 let CK_WEEK = null, CK = null;
-const CK_KIND = { weight: 'Weight', body: 'Body composition', food: 'Food', sleep: 'Sleep', baseline: 'Outside your usual range', doses: 'Doses' };
+const CK_KIND = { weight: 'Weight', body: 'Body composition', food: 'Food', sleep: 'Sleep', baseline: 'Outside your usual range', training: 'Training', doses: 'Doses' };
 async function loadCheckin(week) {
   try {
     const r = await fetch('/dashboard/checkin' + (week ? '?week=' + week : ''), { cache: 'no-store' });
@@ -754,7 +754,7 @@ function renderCheckin() {
   $('ck-next').disabled = CK.week_start >= latest;
   $('checkin').innerHTML = CK.lines.map(l => `<div class="ckcard"><div class="head">${esc(CK_KIND[l.kind] || cap(l.kind))}` +
     (l.tone === 'good' ? '<span class="tone good">Going well</span>' : l.tone === 'watch' ? '<span class="tone watch">Worth a look</span>' : '') +
-    `</div><div>${esc(cap(l.text.replace(/^(Food|Sleep|Doses?): /, '')))}</div></div>`).join('');   // the card's heading already says it
+    `</div><div>${esc(cap(l.text.replace(/^(Food|Sleep|Training|Doses?): /, '')))}</div></div>`).join('');   // the card's heading already says it
 }
 
 // ------------------------------------------------------------ food

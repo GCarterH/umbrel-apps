@@ -7,7 +7,7 @@ today is only part of a day). A measure is "high" or "low" when recent is outsid
 most recent days with data in a row that were outside it.
 """
 import datetime as dt, statistics
-from . import body, dailycache, doses as DOSES, food, timeutil as T
+from . import body, dailycache, doses as DOSES, food, timeutil as T, training
 from .config import HOME_TZ
 
 # key, daily column, name, unit, which way is good, decimals
@@ -219,6 +219,21 @@ def _dose_line(con, ws, we):
     return dict(kind='doses', text=f'Dose{"s" if len(ds) > 1 else ""}: ' + '; '.join(parts) + '.', tone='neutral')
 
 
+def _training_line(con, ws, we):
+    zone = T.zone(HOME_TZ) or T.UTC
+    utc = lambda d: T.fmt(dt.datetime(d.year, d.month, d.day, tzinfo=zone))
+    w = training.week_summary(con, utc(ws), utc(we + dt.timedelta(days=1)))
+    if not w:
+        return None
+    text = (f'Training: {w["sessions"]} session{"s" if w["sessions"] != 1 else ""}, {w["working_sets"]} working sets'
+            + (f', {w["volume_kg"]:,} kg lifted in total' if w['volume_kg'] else '') + '.')
+    if w['prs']:
+        best = [f'{p["exercise"]} {p["weight_kg"]:g} kg × {p["reps"]}' for p in w['prs'][:3]]
+        more = len(w['prs']) - len(best)
+        text += f' New best{"s" if len(w["prs"]) > 1 else ""} (estimated one-rep max): ' + ', '.join(best) + (f' and {more} more' if more > 0 else '') + '.'
+    return dict(kind='training', text=text, tone='good' if w['prs'] else 'neutral')
+
+
 def week_bounds(week=None):
     """Monday and Sunday of the week starting on (or containing) date `week`; default the last complete week."""
     if week is None:
@@ -236,5 +251,6 @@ def checkin(con, week=None):
     base = baselines(con, we + dt.timedelta(days=1))   # "recent" is then exactly this week
     lines = [_weight_line(con, ws, we, target), _body_line(con, we), _food_line(rows, target), _sleep_line(rows, base)]
     lines += _baseline_lines(base)
+    lines.append(_training_line(con, ws, we))
     lines.append(_dose_line(con, ws, we))
     return dict(week_start=_iso(ws), week_end=_iso(we), generated_at=T.now(), lines=[l for l in lines if l])

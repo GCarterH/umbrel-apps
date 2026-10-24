@@ -174,6 +174,39 @@ CREATE TABLE IF NOT EXISTS doses (
 );
 CREATE INDEX IF NOT EXISTS doses_time ON doses (taken_at);
 
+-- Strength-training sessions from the Health Sync app's workout tracker (POST /api/v1/training, training.py), with
+-- every set in training_sets. A session is replaced whole when sent again; deleted_at marks a deleted one.
+CREATE TABLE IF NOT EXISTS training_sessions (
+    id TEXT PRIMARY KEY,
+    started TEXT NOT NULL,
+    ended TEXT,
+    time_zone TEXT NOT NULL,
+    name TEXT,
+    plan_day TEXT,
+    hk_workout_uuid TEXT,
+    notes TEXT,
+    extra_json TEXT,
+    received_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    deleted_at TEXT
+);
+CREATE INDEX IF NOT EXISTS training_sessions_time ON training_sessions (started);
+CREATE INDEX IF NOT EXISTS training_sessions_hk ON training_sessions (hk_workout_uuid);
+CREATE TABLE IF NOT EXISTS training_sets (
+    session_id TEXT NOT NULL,
+    ex_order INTEGER NOT NULL,
+    exercise_id TEXT,
+    exercise_name TEXT,
+    set_order INTEGER NOT NULL,
+    kind TEXT NOT NULL,
+    weight_kg REAL,
+    reps INTEGER NOT NULL,
+    rir REAL,
+    done_at TEXT
+);
+CREATE INDEX IF NOT EXISTS training_sets_session ON training_sets (session_id, ex_order, set_order);
+CREATE INDEX IF NOT EXISTS training_sets_exercise ON training_sets (exercise_id);
+
 -- Reports and results kept with the health data (documents.py), e.g. the pharmacogenomic report. Never expire.
 -- The file itself is in data/documents/<file_sha256><ext>.
 CREATE TABLE IF NOT EXISTS documents (
