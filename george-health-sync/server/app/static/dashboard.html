@@ -5,141 +5,197 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Health Sync</title>
 <link rel="icon" href="/icon.png"><link rel="apple-touch-icon" href="/icon.png">
+<meta name="theme-color" content="#F2F2F7" media="(prefers-color-scheme: light)"><meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)">
 <style>
+/* Daylight: the Health Sync app's design language (HealthSync/docs/DESIGN.md). White cards on the grouped grey, one
+   blue accent, rounded tabular figures. Orange only for over target or out of range. The --s* and older names are
+   kept as aliases so the chart code reads the same roles. */
 :root {
   color-scheme: light;
-  --page: #f4f4f2; --surface: #fcfcfb; --raised: #ffffff; --line: #e4e3df; --grid: #ecebe7;
-  --text: #0b0b0b; --text-2: #52514e; --text-3: #7a7974;
-  --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a; --s4: #eda100; --s5: #e87ba4; --s7: #6250d6;
-  --dot: rgba(42,120,214,.28); --accent-soft: #e6effb; --banner: #fff6e0;
+  --page: #F2F2F7; --surface: #FFFFFF; --raised: #F2F2F7; --hairline: rgba(0,0,0,.08);
+  --text: #000000; --muted: #8A8A8F; --accent: #007AFF; --accent-deep: #005CD9; --accent-tint: #5AB0FF;
+  --accent-soft: rgba(0,122,255,.10); --warn: #FF9500; --range: rgba(52,199,89,.12);
+  --s1: var(--accent); --s2: var(--accent-tint); --s3: #34C759; --s4: var(--warn); --s5: #AF52DE; --s7: var(--accent-deep);
+  --line: var(--hairline); --grid: var(--hairline); --text-2: var(--muted); --text-3: var(--muted);
+  --dot: rgba(0,122,255,.30); --banner: rgba(255,149,0,.12);
+  --figure: ui-rounded, "SF Pro Rounded", -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
 }
 @media (prefers-color-scheme: dark) {
   :root:where(:not([data-theme="light"])) {
     color-scheme: dark;
-    --page: #121211; --surface: #1a1a19; --raised: #222221; --line: #33332f; --grid: #2a2a27;
-    --text: #f0efec; --text-2: #c3c2b7; --text-3: #8f8e86;
-    --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --s5: #d55181; --s7: #9085e9;
-    --dot: rgba(57,135,229,.35); --accent-soft: #1d2a3a; --banner: #2e2716;
+    --page: #000000; --surface: #1C1C1E; --raised: #2C2C2E; --hairline: rgba(255,255,255,.1);
+    --text: #FFFFFF; --muted: #8E8E93; --accent: #0A84FF; --accent-deep: #0A6CE0; --accent-tint: #64B5FF;
+    --accent-soft: rgba(10,132,255,.18); --warn: #FF9F0A; --range: rgba(48,209,88,.16); --s3: #30D158; --s5: #BF5AF2;
+    --dot: rgba(10,132,255,.38); --banner: rgba(255,159,10,.16);
   }
 }
 :root[data-theme="dark"] {
   color-scheme: dark;
-  --page: #121211; --surface: #1a1a19; --raised: #222221; --line: #33332f; --grid: #2a2a27;
-  --text: #f0efec; --text-2: #c3c2b7; --text-3: #8f8e86;
-  --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --s5: #d55181; --s7: #9085e9;
-  --dot: rgba(57,135,229,.35); --accent-soft: #1d2a3a; --banner: #2e2716;
+  --page: #000000; --surface: #1C1C1E; --raised: #2C2C2E; --hairline: rgba(255,255,255,.1);
+  --text: #FFFFFF; --muted: #8E8E93; --accent: #0A84FF; --accent-deep: #0A6CE0; --accent-tint: #64B5FF;
+  --accent-soft: rgba(10,132,255,.18); --warn: #FF9F0A; --range: rgba(48,209,88,.16); --s3: #30D158; --s5: #BF5AF2;
+  --dot: rgba(10,132,255,.38); --banner: rgba(255,159,10,.16);
 }
 * { box-sizing: border-box; }
-body { margin: 0; background: var(--page); color: var(--text); font: 15px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; }
-main { max-width: 1100px; margin: 0 auto; padding: 20px 16px 48px; }
-header { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
-header img { width: 40px; height: 40px; border-radius: 10px; }
-header h1 { font-size: 22px; margin: 0; }
-header .sub { color: var(--text-2); font-size: 13px; }
+body { margin: 0; background: var(--page); color: var(--text); font: 17px/1.4 -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
+  font-variant-numeric: tabular-nums; -webkit-font-smoothing: antialiased; }
+main { max-width: 768px; margin: 0 auto; padding: 18px 24px 56px; }
+a, .linkbtn { color: var(--accent); font-weight: 600; text-decoration: none; }
+b { font-weight: 600; }
+
+/* top bar, masthead, headline */
+header { display: flex; align-items: center; gap: 10px; }
+header img { width: 28px; height: 28px; border-radius: 7px; }
+header .brand { font-size: 15px; font-weight: 600; color: var(--muted); }
 header .spacer { flex: 1; }
-a { color: var(--s1); }
-.connect { font-size: 14px; text-decoration: none; padding: 6px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--raised); }
-.ranges { display: inline-flex; background: var(--raised); border: 1px solid var(--line); border-radius: 10px; padding: 3px; margin: 18px 0 6px; flex-wrap: wrap; }
-.ranges button { font: inherit; font-size: 14px; border: 0; background: none; color: var(--text-2); padding: 6px 14px; border-radius: 7px; cursor: pointer; }
-.ranges button[aria-pressed="true"] { background: var(--accent-soft); color: var(--text); font-weight: 600; }
-.period { color: var(--text-3); font-size: 13px; margin-bottom: 14px; }
-.banner { background: var(--banner); border: 1px solid var(--line); border-radius: 10px; padding: 10px 14px; margin: 12px 0; font-size: 14px; }
-section { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 18px; margin: 14px 0; }
-section h2 { font-size: 17px; margin: 0 0 4px; }
-section .lead { color: var(--text-2); font-size: 14px; margin: 0 0 12px; }
-.changes { margin: 0; padding-left: 20px; }
-.changes li { margin: 6px 0; }
-.cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 12px; }
-.card { text-align: left; font: inherit; color: inherit; background: var(--raised); border: 1px solid var(--line); border-radius: 12px; padding: 14px; cursor: pointer; display: flex; flex-direction: column; gap: 4px; min-height: 150px; }
-.card:hover { border-color: var(--text-3); }
-.card[aria-pressed="true"] { outline: 2px solid var(--s1); outline-offset: -1px; }
-.card .name { color: var(--text-2); font-size: 13px; font-weight: 600; }
-.card .value { font-size: 26px; font-weight: 650; letter-spacing: -.01em; font-variant-numeric: tabular-nums; }
-.card .value small { font-size: 13px; font-weight: 500; color: var(--text-2); margin-left: 4px; }
-.card .cmp { font-size: 13px; color: var(--text-2); }
+.connect { font-size: 15px; }
+.tabs { display: flex; align-items: baseline; gap: 18px; overflow-x: auto; scrollbar-width: none; margin: 18px -24px 0; padding: 0 24px 2px; }
+.tabs::-webkit-scrollbar { display: none; }
+.tabs button { font: inherit; font-size: 19px; font-weight: 600; color: var(--muted); background: none; border: 0; padding: 0 0 6px;
+  cursor: pointer; white-space: nowrap; border-bottom: 1px solid transparent; }
+.tabs button[aria-selected="true"] { font-size: 30px; font-weight: 700; color: var(--text); border-bottom-color: var(--accent); }
+.tab-off { display: none !important; }
+.headline { font-size: 30px; line-height: 1.2; font-weight: 700; margin: 22px 0 8px; letter-spacing: -.01em; min-height: 36px; }
+.syncline { display: flex; align-items: center; gap: 7px; font-size: 13px; color: var(--muted); }
+.syncline i { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); display: inline-block; }
+.syncline.busy i { background: var(--warn); }
+.ranges { display: flex; flex-wrap: wrap; gap: 4px 16px; margin: 22px 0 2px; }
+.ranges button { font: inherit; font-size: 15px; font-weight: 600; border: 0; background: none; color: var(--muted); padding: 0; cursor: pointer; }
+.ranges button[aria-pressed="true"] { color: var(--accent); }
+.period { color: var(--muted); font-size: 13px; margin-top: 4px; }
+#body-pick { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; margin: 0 0 10px !important; }
+#body-pick::-webkit-scrollbar { display: none; }
+#body-pick button { white-space: nowrap; }
+.banner { background: var(--banner); border-radius: 16px; padding: 12px 16px; margin: 14px 0 0; font-size: 15px; }
+
+/* chapters: an eyebrow label with a hairline to the right, then a white card (or a grid of white cards) */
+section { margin: 34px 0 0; }
+.chart-head { display: flex; align-items: center; gap: 12px; margin: 0 0 14px; min-height: 22px; }
+.chart-head h2, .chart-head h3 { font-size: 13px; font-weight: 600; color: var(--muted); margin: 0; white-space: nowrap; }
+.chart-head .spacer { flex: 1; height: 1px; background: var(--hairline); }
+.box { background: var(--surface); border-radius: 24px; padding: 18px 20px; }
+.box + .box { margin-top: 12px; }
+section .lead, .box .lead { color: var(--muted); font-size: 15px; margin: 0 0 12px; }
+section.plain > .lead { margin: 0 0 12px; }
+.linkbtn { font: inherit; font-size: 15px; background: none; border: 0; cursor: pointer; padding: 0; }
+.two { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.two > section { margin: 34px 0 0; min-width: 0; }
+@media (max-width: 640px) { .two { grid-template-columns: 1fr; } .two > section + section { margin-top: 34px; } }
+section .two { margin-top: 0; }
+
+/* figures */
+.value, .fig, .ring-fig, .ledger .val, .peer .value, td.num { font-family: var(--figure); font-variant-numeric: tabular-nums; }
+.value small, .fig small, .ledger .val small { font-family: -apple-system, BlinkMacSystemFont, system-ui, sans-serif; font-size: 13px; font-weight: 500; color: var(--muted); margin-left: 3px; }
+
+/* equal-size cards */
+.cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); grid-auto-rows: 1fr; gap: 12px; }
+.card { text-align: left; font: inherit; color: inherit; background: var(--surface); border: 0; border-radius: 24px; padding: 16px 18px; cursor: pointer;
+  display: flex; flex-direction: column; gap: 3px; min-height: 156px; }
+.card[aria-pressed="true"] { box-shadow: inset 0 0 0 2px var(--accent); }
+.card .name, .mcard .name, .tile .name { color: var(--muted); font-size: 13px; font-weight: 600; }
+.card .value { font-size: 26px; font-weight: 600; }
+.card .cmp { font-size: 13px; color: var(--muted); }
 .card svg { margin-top: auto; }
-.chart-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
-.chart-head .spacer { flex: 1; }
-.linkbtn { font: inherit; font-size: 13px; background: none; border: 0; color: var(--s1); cursor: pointer; padding: 0; }
+.mcards { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; }
+.mcard { background: var(--surface); border-radius: 24px; padding: 14px 16px; display: flex; flex-direction: column; gap: 2px; height: 152px; overflow: hidden; }
+.mcard .value { font-size: 22px; font-weight: 600; }
+.mcard .usual { color: var(--muted); font-size: 12px; min-height: 16px; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.mcard .mini { margin-top: auto; }
+.mcard:has(.mini) .usual { -webkit-line-clamp: 2; }
+.ckcards { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); grid-auto-rows: 1fr; gap: 12px; }
+.ckcard { background: var(--surface); border-radius: 24px; padding: 16px 18px; display: flex; flex-direction: column; gap: 6px; font-size: 15px; }
+.ckcard .head { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 13px; font-weight: 600; }
+.ckcard .tone { margin-left: auto; font-size: 12px; font-weight: 600; padding: 2px 9px; border-radius: 999px; }
+.ckcard .tone.good { color: var(--accent); background: var(--accent-soft); }
+.ckcard .tone.watch { color: var(--warn); background: var(--banner); }
+
+/* dials (rings) and capsule bars */
+.dials { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; text-align: center; }
+.dial .ringwrap { position: relative; width: 88px; height: 88px; margin: 0 auto 8px; }
+.dial svg { display: block; }
+.dial .ring-fig { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 20px; font-weight: 600; }
+.dial .ring-fig.long { font-size: 15px; }
+.dial .name { font-size: 13px; font-weight: 600; color: var(--muted); }
+.dial .cap { font-size: 12px; color: var(--muted); }
+.capsule { height: 6px; border-radius: 3px; background: var(--hairline); overflow: hidden; margin-top: 6px; }
+.capsule > i { display: block; height: 100%; border-radius: 3px; background: var(--accent); }
+.capsule.over > i { background: var(--warn); }
+
+/* ledger: rows with hairlines between them */
+.ledger { background: var(--surface); border-radius: 24px; padding: 2px 20px; }
+.ledger .row { display: flex; align-items: center; gap: 12px; padding: 13px 0; border-top: 1px solid var(--hairline); }
+.ledger .row:first-child { border-top: 0; }
+.ledger .row.tap { cursor: pointer; }
+.ledger .main { flex: 1; min-width: 0; }
+.ledger .title { font-size: 17px; }
+.ledger .detail { font-size: 13px; color: var(--muted); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.ledger .val { font-size: 19px; font-weight: 600; white-space: nowrap; }
+.ledger .chev { color: var(--muted); font-size: 17px; margin-left: -4px; }
+.ledger .more { color: var(--muted); font-size: 13px; padding: 12px 0; border-top: 1px solid var(--hairline); }
+
+/* charts */
 .chart { position: relative; width: 100%; }
 .chart svg { display: block; width: 100%; }
-.axis text { fill: var(--text-3); font-size: 11px; }
-.legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 13px; color: var(--text-2); margin: 6px 0 4px; }
-.legend i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 6px; vertical-align: -1px; }
-.tip { position: absolute; pointer-events: none; background: var(--raised); color: var(--text); border: 1px solid var(--line); border-radius: 8px; padding: 6px 9px; font-size: 13px; box-shadow: 0 4px 14px rgba(0,0,0,.12); white-space: nowrap; z-index: 2; display: none; }
-.tip b { font-variant-numeric: tabular-nums; }
-.two { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
-.two section { margin: 0; }
-@media (max-width: 760px) { .two { grid-template-columns: 1fr; } }
-table { border-collapse: collapse; width: 100%; font-size: 13px; font-variant-numeric: tabular-nums; }
-th, td { text-align: left; padding: 5px 8px; border-bottom: 1px solid var(--grid); }
-th { color: var(--text-2); font-weight: 600; }
-.tablewrap { max-height: 320px; overflow: auto; margin-top: 10px; }
-.empty { color: var(--text-3); font-size: 14px; padding: 18px 0; }
-body.loading section, body.loading .two, body.loading .period { display: none; }
-footer { color: var(--text-3); font-size: 12px; margin-top: 24px; }
-.peer { display: grid; grid-template-columns: 190px 1fr; gap: 6px 18px; padding: 14px 0; border-top: 1px solid var(--grid); }
+.axis text { fill: var(--muted); font-size: 11px; font-family: var(--figure); }
+.legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 13px; color: var(--muted); margin: 0 0 8px; }
+.legend i { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 6px; vertical-align: 0; }
+.tip { position: absolute; pointer-events: none; background: var(--surface); color: var(--text); border: 1px solid var(--hairline); border-radius: 12px;
+  padding: 7px 10px; font-size: 13px; white-space: nowrap; z-index: 2; display: none; }
+.tip b { font-family: var(--figure); }
+table { border-collapse: collapse; width: 100%; font-size: 13px; }
+th, td { text-align: left; padding: 7px 8px; border-bottom: 1px solid var(--hairline); }
+th { color: var(--muted); font-weight: 600; }
+.tablewrap { max-height: 360px; overflow: auto; margin-top: 12px; }
+.empty { color: var(--muted); font-size: 15px; padding: 14px 0; }
+body.loading section, body.loading .two, body.loading .period, body.loading .ranges, body.loading .headline { visibility: hidden; }
+footer { color: var(--muted); font-size: 12px; margin-top: 34px; }
+
+/* compared with people your age */
+.peer { display: grid; grid-template-columns: 170px 1fr; gap: 6px 18px; padding: 16px 0; border-top: 1px solid var(--hairline); }
 .peer:first-child { border-top: 0; padding-top: 4px; }
-.peer .name { color: var(--text-2); font-size: 13px; font-weight: 600; }
-.peer .value { font-size: 22px; font-weight: 650; font-variant-numeric: tabular-nums; }
-.peer .value small { font-size: 13px; font-weight: 500; color: var(--text-2); margin-left: 4px; }
-.peer .when { color: var(--text-3); font-size: 12px; }
-.peer .words { font-size: 14px; margin: 2px 0 6px; }
-.peer .src { color: var(--text-3); font-size: 12px; margin-top: 4px; }
-.peer .src a { color: var(--text-3); }
+.peer .name { color: var(--muted); font-size: 13px; font-weight: 600; }
+.peer .value { font-size: 26px; font-weight: 600; }
+.peer .value small { font-size: 13px; font-weight: 500; color: var(--muted); margin-left: 3px; }
+.peer .when { color: var(--muted); font-size: 12px; }
+.peer .words { font-size: 15px; margin: 2px 0 8px; }
+.peer .src { color: var(--muted); font-size: 12px; margin-top: 6px; }
+.peer .src a { color: var(--muted); font-weight: 400; text-decoration: underline; text-decoration-color: var(--hairline); }
 .peer svg { display: block; width: 100%; overflow: visible; }
 @media (max-width: 640px) { .peer { grid-template-columns: 1fr; } }
-.you { font-size: 13px; color: var(--text-2); margin: 0 0 6px; }
-.tabs { position: sticky; top: 0; z-index: 3; display: flex; gap: 4px; overflow-x: auto; background: var(--page); margin: 14px -16px 0; padding: 8px 16px; border-bottom: 1px solid var(--line); scrollbar-width: none; }
-.tabs::-webkit-scrollbar { display: none; }
-.tabs button { font: inherit; font-size: 15px; border: 0; background: none; color: var(--text-2); padding: 7px 14px; border-radius: 8px; cursor: pointer; white-space: nowrap; }
-.tabs button[aria-selected="true"] { background: var(--accent-soft); color: var(--text); font-weight: 600; }
-@media (max-width: 480px) { .tabs { gap: 0; padding: 8px 8px; } .tabs button { font-size: 13px; padding: 6px 5px; } }
-.tab-off { display: none !important; }
-.daynav { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin: 4px 0 12px; }
-.daynav button, .daynav input { font: inherit; font-size: 14px; padding: 5px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--raised); color: var(--text); cursor: pointer; }
-.daynav button:disabled { opacity: .4; cursor: default; }
-.tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; margin-bottom: 14px; }
-.tile { background: var(--raised); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; }
-.tile .name { color: var(--text-2); font-size: 12px; font-weight: 600; }
-.tile .value { font-size: 20px; font-weight: 650; font-variant-numeric: tabular-nums; }
-.tile .value small { font-size: 12px; font-weight: 500; color: var(--text-2); margin-left: 3px; }
-.tile .usual { color: var(--text-3); font-size: 12px; }
-.mcards { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; }
-.mcard { background: var(--raised); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; display: flex; flex-direction: column; gap: 2px; height: 148px; overflow: hidden; }
-.mcard .name { color: var(--text-2); font-size: 12px; font-weight: 600; }
-.mcard .value { font-size: 20px; font-weight: 650; font-variant-numeric: tabular-nums; }
-.mcard .value small { font-size: 12px; font-weight: 500; color: var(--text-2); margin-left: 3px; }
-.mcard .usual { color: var(--text-3); font-size: 12px; min-height: 16px; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
-.mcard .mini { margin-top: auto; }
-.mcard:has(.mini) .usual { -webkit-line-clamp: 2; }   /* leave the chart its room */
-.ckcards { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); grid-auto-rows: 1fr; gap: 10px; }
-.ckcard { background: var(--raised); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; display: flex; flex-direction: column; gap: 6px; font-size: 14px; }
-.ckcard .head { display: flex; align-items: center; gap: 8px; color: var(--text-2); font-size: 12px; font-weight: 600; }
-.ckcard .tone { margin-left: auto; font-weight: 600; font-size: 12px; padding: 1px 8px; border-radius: 999px; }
-.ckcard .tone.good { color: var(--s3); border: 1px solid var(--s3); }
-.ckcard .tone.watch { color: var(--s4); border: 1px solid var(--s4); }
+.you { font-size: 13px; color: var(--muted); margin: 0 0 6px; }
+.you input, .daynav input { font: inherit; font-size: 15px; padding: 4px 10px; border: 0; border-radius: 10px; background: var(--raised); color: var(--text); }
+.you input { width: 80px; }
+.you button, .daynav button { font: inherit; font-size: 15px; font-weight: 600; padding: 6px 14px; border: 0; border-radius: 999px; background: var(--accent-soft); color: var(--accent); cursor: pointer; }
+.daynav { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin: 0 0 4px; }
+.daynav button:disabled { opacity: .35; cursor: default; }
 .mcards.five { grid-template-columns: repeat(5, minmax(0, 1fr)); }
 @media (max-width: 960px) { .mcards.five { grid-template-columns: 1fr; } }
-
-.daypart h3 { font-size: 14px; margin: 14px 0 4px; }
-
-.you input { font: inherit; width: 70px; padding: 2px 6px; border: 1px solid var(--line); border-radius: 6px; background: var(--raised); color: var(--text); }
-.you button { font: inherit; font-size: 13px; padding: 2px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--raised); color: var(--text); cursor: pointer; }
+.daypart { margin-top: 34px; }
+.daypart:first-child { margin-top: 0; }
+@media (max-width: 480px) {
+  main { padding: 14px 16px 48px; }
+  .tabs { margin: 14px -16px 0; padding: 0 16px 2px; gap: 14px; }
+  .tabs button { font-size: 17px; } .tabs button[aria-selected="true"] { font-size: 26px; }
+  .headline { font-size: 26px; }
+  .box, .ledger { border-radius: 20px; } .box { padding: 16px; } .ledger { padding: 2px 16px; }
+}
+@media (prefers-reduced-motion: no-preference) { .capsule > i { transition: width .6s ease; } }
 </style>
 </head>
 <body class="loading">
 <main>
   <header>
     <img src="/icon.png" alt="">
-    <div><h1>Health</h1><div class="sub" id="updated">Loading…</div></div>
+    <div class="brand">Health Sync</div>
     <div class="spacer"></div>
     <a class="connect" href="/connect">Connect a phone</a>
   </header>
 
-  <nav class="tabs" role="tablist" aria-label="Sections" id="tabs">
+  <nav class="tabs" role="tablist" aria-label="Chapters" id="tabs">
     <button role="tab" data-go="overview">Overview</button><button role="tab" data-go="day">Day</button><button role="tab" data-go="activity">Activity</button><button role="tab" data-go="sleep">Sleep</button><button role="tab" data-go="body">Body</button><button role="tab" data-go="food">Food</button><button role="tab" data-go="compared">Compared</button>
   </nav>
+  <h1 class="headline" id="headline"></h1>
+  <div class="syncline" id="updated"><i></i><span>Loading…</span></div>
   <div class="ranges" role="group" aria-label="Time range" id="range-bar">
     <button data-range="30">30 days</button><button data-range="90">90 days</button>
     <button data-range="365">12 months</button><button data-range="all">All time</button>
@@ -147,20 +203,20 @@ footer { color: var(--text-3); font-size: 12px; margin-top: 24px; }
   <div class="period" id="period"></div>
   <div id="banner"></div>
 
-  <section id="checkin-sec" data-tab="overview">
+  <section id="checkin-sec" class="plain" data-tab="overview">
     <div class="chart-head"><h2 id="checkin-title">Your week</h2><div class="spacer"></div>
       <div class="daynav" style="margin:0"><button id="ck-prev" aria-label="Week before">‹</button><button id="ck-next" aria-label="Week after">›</button></div></div>
     <p class="lead" id="checkin-lead"></p>
     <div class="ckcards" id="checkin"></div>
   </section>
 
-  <section id="changes-sec" data-tab="overview">
+  <section id="changes-sec" class="plain" data-tab="overview">
     <h2>What changed</h2>
     <p class="lead" id="changes-lead"></p>
-    <ul class="changes" id="changes"></ul>
+    <div class="ledger" id="changes"></div>
   </section>
 
-  <section data-tab="overview">
+  <section class="plain" data-tab="overview">
     <h2>At a glance</h2>
     <p class="lead" id="cards-lead">Daily averages for the period. Tap a card to see its chart.</p>
     <div class="cards" id="cards"></div>
@@ -173,9 +229,7 @@ footer { color: var(--text-3); font-size: 12px; margin-top: 24px; }
     <div id="peers"></div>
   </section>
 
-  <section id="day-sec" data-tab="day">
-    <h2>One day</h2>
-    <p class="lead">Pick any day to see it in detail. You can also tap a day on the Overview or Sleep charts.</p>
+  <section id="day-sec" class="plain" data-tab="day" style="margin-top:22px">
     <div class="daynav">
       <button id="day-prev" aria-label="Previous day">‹ Day before</button>
       <input type="date" id="day-pick" aria-label="Day">
@@ -229,7 +283,7 @@ footer { color: var(--text-3); font-size: 12px; margin-top: 24px; }
       <div><div class="legend"><span><i style="background:var(--s1)"></i>Weight (kg)</span></div><div class="chart" id="body-w"></div></div>
       <div><div class="ranges" role="group" aria-label="Measurement" id="body-pick" style="margin:0 0 6px"></div><div class="chart" id="body-f"></div></div>
     </div>
-    <div class="tablewrap" id="body-table"></div>
+    <div class="ledger" id="body-table" style="margin:12px -20px -2px; padding-top:0"></div>
   </section>
 
   <section id="bp-sec" data-tab="body">
@@ -237,13 +291,14 @@ footer { color: var(--text-3); font-size: 12px; margin-top: 24px; }
     <p class="lead" id="bp-lead"></p>
     <div class="legend"><span><i style="background:var(--s1)"></i>Systolic</span><span><i style="background:var(--s2)"></i>Diastolic</span></div>
     <div class="chart" id="bp"></div>
-    <div class="tablewrap" id="bp-table"></div>
+    <div class="ledger" id="bp-table" style="margin:12px -20px -2px; padding-top:0"></div>
   </section>
 
-  <section id="food-sec" data-tab="food">
-    <h2>Food</h2>
+  <section id="food-sec" class="plain" data-tab="food">
+    <h2>Averages</h2>
     <p class="lead" id="food-lead"></p>
-    <div class="mcards five" id="food-cards"></div>
+    <div class="box"><div class="dials" id="food-dials"></div></div>
+    <div class="ledger" id="food-cards" style="margin-top:12px"></div>
   </section>
 
   <section id="food-day-sec" data-tab="food">
@@ -253,10 +308,10 @@ footer { color: var(--text-3); font-size: 12px; margin-top: 24px; }
     <div class="chart" id="food-chart"></div>
   </section>
 
-  <section id="food-log-sec" data-tab="food">
+  <section id="food-log-sec" class="plain" data-tab="food">
     <h2>What you logged</h2>
     <p class="lead" id="food-log-lead"></p>
-    <div class="tablewrap" id="food-log"></div>
+    <div class="ledger" id="food-log"></div>
   </section>
 
   <div class="empty" id="tab-empty" hidden>Nothing to show here yet. It fills in once the phone has sent this kind of data.</div>
@@ -279,6 +334,7 @@ const fmtDay = d => `${DAYS[d.getDay()]} ${d.getDate()} ${MONTHS[d.getMonth()]} 
 const fmtShort = d => `${d.getDate()} ${MONTHS[d.getMonth()]}`;
 const int = n => Math.round(n).toLocaleString('en-GB');
 const one = n => (Math.round(n * 10) / 10).toLocaleString('en-GB', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+const two = n => n.toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 });   // weight: 2 decimals, as the app
 const hm = h => { const m = Math.round(h * 60); return `${Math.floor(m / 60)} h ${String(m % 60).padStart(2, '0')} min`; };
 const clock = h => { let m = Math.round(((h % 24) + 24) % 24 * 60); if (m === 1440) m = 0; return `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`; };
 const mins = n => { n = Math.round(Math.abs(n)); return n >= 60 ? `${Math.floor(n / 60)} h ${String(n % 60).padStart(2, '0')} min` : `${n} min`; };
@@ -304,16 +360,17 @@ const METRICS = [
     say: d => `${int(Math.abs(d))} ms ${d > 0 ? 'higher' : 'lower'}` },
   { k: 'vo2', tip: 'ml/kg/min', name: 'VO₂ max', col: 'VO2 max', unit: 'ml/kg/min', show: one, same: 0.5,
     say: d => `${one(Math.abs(d))} ${d > 0 ? 'higher' : 'lower'}` },
-  { k: 'weight', tip: 'kg', name: 'Weight', col: 'Weight (kg)', unit: 'kg', show: one, same: 0.3, sparse: true,
-    say: d => `${one(Math.abs(d))} kg ${d > 0 ? 'heavier' : 'lighter'}` },
+  { k: 'weight', tip: 'kg', name: 'Weight', col: 'Weight (kg)', unit: 'kg', show: v => two(v), same: 0.3, sparse: true,
+    say: d => `${two(Math.abs(d))} kg ${d > 0 ? 'heavier' : 'lighter'}` },
   { k: 'fat', tip: '%', name: 'Body fat', col: 'Body fat %', unit: '%', show: one, same: 0.3, sparse: true,
     say: d => `${one(Math.abs(d))} points ${d > 0 ? 'higher' : 'lower'}` },
   { k: 'bp', tip: 'mmHg', name: 'Blood pressure', col: 'Systolic BP', col2: 'Diastolic BP', unit: 'mmHg', sparse: true,
     show: (a, b) => `${int(a)}/${int(b)}`, same: 2,
     say: (d, d2) => `${int(Math.abs(d))}/${int(Math.abs(d2))} mmHg ${d > 0 ? 'higher' : 'lower'}` },
 ];
-const WTYPES = [['walk', 'Walking min', 'Walking', '--s1'], ['cycle', 'Cycling min', 'Cycling', '--s2'],
-                ['strength', 'Strength min', 'Strength', '--s3'], ['run', 'Running min', 'Running', '--s4'],
+// Workout types: tints of the accent first, then Apple's system green and purple (never orange, which means a warning).
+const WTYPES = [['walk', 'Walking min', 'Walking', '--accent'], ['cycle', 'Cycling min', 'Cycling', '--accent-tint'],
+                ['strength', 'Strength min', 'Strength', '--accent-deep'], ['run', 'Running min', 'Running', '--s3'],
                 ['other', 'Other workout min', 'Other', '--s5']];
 const css = v => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
 
@@ -434,7 +491,7 @@ function timeChart(box, { series, a, b, height = 220, yFmt = String, yMin, yMax,
         if (x + w > W - R) w = W - R - x;
         const y0 = Y(s.stack ? p.base : Math.max(lo, 0)), y1 = Y(s.stack ? p.top : p.v);
         if (Math.abs(y0 - y1) < 0.5 || w < 1) continue;
-        el('rect', { x, y: Math.min(y0, y1), width: w, height: Math.max(1, Math.abs(y0 - y1) - (s.stack ? 2 : 0)), rx: Math.min(4, w / 2), fill: s.color }, svg);
+        el('rect', { x, y: Math.min(y0, y1), width: w, height: Math.max(1, Math.abs(y0 - y1) - (s.stack ? 2 : 0)), rx: Math.min(8, w / 2), fill: s.color }, svg);
       }
     } else if (s.kind === 'dots') {
       for (const p of pts) el('circle', { cx: X(p.d.getTime() + MS_DAY / 2), cy: Y(p.v), r: s.r || 2.5, fill: s.color }, svg);
@@ -445,7 +502,7 @@ function timeChart(box, { series, a, b, height = 220, yFmt = String, yMin, yMax,
         const gap = prev !== null && (t - prev) > (s.maxGap || 10 * MS_DAY);
         dstr += `${dstr && !gap ? 'L' : 'M'}${X(t).toFixed(1)},${Y(p.v).toFixed(1)}`; prev = t;
       }
-      el('path', { d: dstr, fill: 'none', stroke: s.color, 'stroke-width': s.width || 2, 'stroke-linejoin': 'round', 'stroke-linecap': 'round' }, svg);
+      el('path', { d: dstr, fill: 'none', stroke: s.color, 'stroke-width': s.width || 2.5, 'stroke-linejoin': 'round', 'stroke-linecap': 'round' }, svg);
       if (s.markers) for (const p of pts) el('circle', { cx: X(p.d.getTime() + (s.mid || MS_DAY / 2)), cy: Y(p.v), r: 4, fill: s.color, stroke: css('--surface'), 'stroke-width': 2 }, svg);
     }
   }
@@ -483,7 +540,7 @@ function catBars(box, { labels, values, color, fmt, height = 170 }) {
     el('text', { x: x + bw / 2, y: H - 6, 'text-anchor': 'middle', class: 'axis', fill: css('--text-3'), 'font-size': 11 }, svg).textContent = lab;
     if (v === null) return;
     const h = (v / hi) * (H - T - B), y = H - B - h;
-    el('rect', { x, y, width: bw, height: Math.max(1, h), rx: 4, fill: color }, svg);
+    el('rect', { x, y, width: bw, height: Math.max(1, h), rx: Math.min(8, bw / 2), fill: color }, svg);
     el('text', { x: x + bw / 2, y: y - 5, 'text-anchor': 'middle', fill: css('--text-2'), 'font-size': 11 }, svg).textContent = fmt(v);
   });
 }
@@ -499,7 +556,7 @@ function sparkline(m, P) {
   if (pts.length < 2) return svg;
   const vs = pts.map(p => p.v), lo = Math.min(...vs), hi = Math.max(...vs), t0 = P.start.getTime(), t1 = P.end.getTime() + MS_DAY;
   const d = pts.map((p, i) => `${i ? 'L' : 'M'}${((p.d.getTime() - t0) / (t1 - t0) * W).toFixed(1)},${(H - 3 - ((p.v - lo) / ((hi - lo) || 1)) * (H - 6)).toFixed(1)}`).join('');
-  el('path', { d, fill: 'none', stroke: css('--s1'), 'stroke-width': 2, 'vector-effect': 'non-scaling-stroke', 'stroke-linejoin': 'round' }, svg);
+  el('path', { d, fill: 'none', stroke: css('--accent'), 'stroke-width': 2.5, 'vector-effect': 'non-scaling-stroke', 'stroke-linejoin': 'round', 'stroke-linecap': 'round' }, svg);
   return svg;
 }
 
@@ -536,13 +593,16 @@ const sizeWord = { day: 'day', week: 'week', month: 'month' };
 // ------------------------------------------------------------ sections
 function renderHeader() {
   const last = META.last_upload ? new Date(META.last_upload) : null;
-  $('updated').textContent = last ? `Last sync ${fmtDay(last)}, ${String(last.getHours()).padStart(2, '0')}:${String(last.getMinutes()).padStart(2, '0')}` : 'No data yet';
+  const hhmm = d => `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+  const when = last ? (iso(last) === iso(new Date()) ? `today at ${hhmm(last)}` : `${fmtDay(last)} at ${hhmm(last)}`) : null;
+  const busy = META.queued_records > 0;
+  $('updated').classList.toggle('busy', busy);
+  $('updated').innerHTML = '<i></i><span>' + esc(busy ? `Saving ${int(META.queued_records)} records from the phone` : when ? `All synced up · ${when}` : 'Nothing synced yet') + '</span>';
   const P = periods();
   $('period').textContent = ROWS.length ? `${fmtDay(P.start)} to ${fmtDay(P.end)}` : '';
   const notes = [];
   if (!META.summary_ready) notes.push('Preparing your daily summary for the first time. This takes a few minutes; the page updates by itself.');
   else if (META.days_to_prepare > 0) notes.push(`Still preparing the daily summary: ${int(META.days_to_prepare)} days to go. Charts fill in as it goes, and the page updates by itself.`);
-  if (META.queued_records > 0) notes.push(`${int(META.queued_records)} records from the phone are still being saved.`);
   $('banner').innerHTML = notes.map(n => `<div class="banner">${n}</div>`).join('');
   $('footer').textContent = `Everything on this page is worked out on your Umbrel; nothing leaves it. Health Sync ${META.version} · ${int(META.total_records)} records stored.`;
 }
@@ -550,23 +610,44 @@ function renderHeader() {
 function renderChanges(P, results) {
   const vs = P.baseName;
   $('changes-lead').textContent = RANGE === 'all' ? `The last 12 months compared with ${vs}.` : `Compared with ${vs}.`;
-  const items = [];
+  // Ledger rows: what moved (with its chart a tap away), what stayed level, the most active day, workouts, days away.
+  const rows = [];
   const moved = METRICS.map(m => ({ m, r: results[m.k] })).filter(x => x.r.weight >= 2).sort((a, b) => b.r.weight - a.r.weight).slice(0, 4);
-  for (const { m, r } of moved) items.push(`<b>${esc(m.name)}</b>: ${esc(m.say(r.delta, r.delta2))}.`);
+  for (const { m, r } of moved) rows.push({ title: m.name, detail: cap(m.say(r.delta, r.delta2)) + '.', value: m.col2 ? m.show(r.avg, r.avg2) : m.show(r.avg), unit: m.unit, open: m.k });
   const steady = METRICS.filter(m => results[m.k].weight !== undefined && results[m.k].weight < 1).map(m => m.name.toLowerCase());
-  if (steady.length) items.push(`<b>About the same</b>: ${esc(listWords(steady.slice(0, 5)))}.`);
+  if (steady.length) rows.push({ title: 'About the same', detail: cap(listWords(steady.slice(0, 5))) + '.' });
   const cur = between(...P.cur);
   const best = cur.filter(r => r.Steps).sort((a, b) => b.Steps - a.Steps)[0];
-  if (best) items.push(`<b>Most active day</b>: ${fmtDay(best._d)}, ${int(best.Steps)} steps${best.Where ? ` (in ${esc(best.Where)})` : ''}.`);
+  if (best) rows.push({ title: 'Most active day', detail: fmtDay(best._d) + (best.Where ? ` · in ${best.Where}` : ''), value: int(best.Steps), unit: 'steps', day: best.Date });
   const wk = workoutTotals(cur);
-  if (wk.count) items.push(`<b>Workouts</b>: ${int(wk.count)}, ${mins(wk.total)} in total${wk.top ? `, mostly ${wk.top.toLowerCase()}` : ''}.`);
+  if (wk.count) rows.push({ title: 'Workouts', detail: `${mins(wk.total)} in total${wk.top ? `, mostly ${wk.top.toLowerCase()}` : ''}.`, value: int(wk.count) });
   const places = {}; cur.forEach(r => { if (r.Where) places[r.Where] = (places[r.Where] || 0) + 1; });
-  for (const [p, n] of Object.entries(places)) items.push(`<b>Away</b>: ${n} day${n > 1 ? 's' : ''} in ${esc(p)}.`);
-  $('changes').innerHTML = items.length ? items.map(t => `<li>${t}</li>`).join('') : '<li>Not enough data in this period yet.</li>';
+  for (const [p, n] of Object.entries(places)) rows.push({ title: `Away in ${p}`, value: int(n), unit: n > 1 ? 'days' : 'day' });
+  $('changes').innerHTML = rows.length ? ledgerRows(rows) : '<div class="empty">Not enough data in this period yet.</div>';
+  $('changes').querySelectorAll('.row.tap').forEach(el => el.addEventListener('click', () => {
+    const r = rows[+el.dataset.i];
+    if (r.day) goDay(r.day); else { METRIC = r.open; renderAll(false); $('detail-sec').scrollIntoView({ behavior: 'smooth', block: 'start' }); }
+  }));
 }
 const cap = s => s.charAt(0).toUpperCase() + s.slice(1);
 const listWords = a => a.length < 2 ? a.join('') : a.slice(0, -1).join(', ') + ' and ' + a[a.length - 1];
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+/** Daylight Ledger rows: [{title, detail, value, unit, open|day (tappable: a chevron)}], with hairlines between them. */
+const ledgerRows = rows => rows.map((r, i) => `<div class="row${r.open || r.day ? ' tap' : ''}" data-i="${i}"><div class="main"><div class="title">${esc(r.title)}</div>` +
+  (r.detail ? `<div class="detail">${esc(r.detail)}</div>` : '') + (r.html || '') + '</div>' +
+  (r.value !== undefined && r.value !== null ? `<div class="val">${esc(r.value)}${r.unit ? `<small>${esc(r.unit)}</small>` : ''}</div>` : '') +
+  (r.open || r.day ? '<div class="chev">›</div>' : '') + '</div>').join('');
+/** A Daylight dial: a 9-wide ring from 12 o'clock, accent on a hairline track; orange when warn() and over 105%. */
+function ring(frac, over) {
+  const r = 39.5, c = 2 * Math.PI * r, f = Math.max(0, Math.min(1, frac || 0));
+  return `<svg width="88" height="88" viewBox="0 0 88 88" aria-hidden="true"><circle cx="44" cy="44" r="${r}" fill="none" stroke="var(--hairline)" stroke-width="9"/>` +
+    (f > 0 ? `<circle cx="44" cy="44" r="${r}" fill="none" stroke="${over ? 'var(--warn)' : 'var(--accent)'}" stroke-width="9" stroke-linecap="round" ` +
+      `stroke-dasharray="${(c * f).toFixed(2)} ${c.toFixed(2)}" transform="rotate(-90 44 44)"/>` : '') + '</svg>';
+}
+const dial = (fig, name, caption, frac, over) => `<div class="dial"><div class="ringwrap">${ring(frac, over)}` +
+  `<div class="ring-fig${String(fig).length > 5 ? ' long' : ''}">${esc(fig)}</div></div>` +
+  `<div class="name">${esc(name)}</div><div class="cap">${esc(caption || '')}</div></div>`;
+const capsule = (frac, over) => `<div class="capsule${over ? ' over' : ''}"><i style="width:${(Math.max(0, Math.min(1, frac || 0)) * 100).toFixed(1)}%"></i></div>`;
 
 function workoutTotals(rows) {
   const t = {}; let count = 0;
@@ -725,11 +806,11 @@ function renderBP(P) {
       { points: show.map(r => ({ d: r._d, v: r['Diastolic BP'] })), kind: 'line', color: css('--s2'), markers: true, maxGap: 60 * MS_DAY }],
     a, b, yFmt: v => int(v), height: 190,
     hover: d => { const r = nearest(show, d, 'Systolic BP'); if (!r) return null; d = r._d; return { t: d.getTime() + MS_DAY / 2, html: `${fmtDay(d)}${r['BP time'] ? ` at ${r['BP time']}` : ''}<br><b>${r['Systolic BP']}/${r['Diastolic BP']}</b> mmHg` }; } });
-  $('bp-table').innerHTML = `<table><tr><th>Date</th><th>Time</th><th>Reading (mmHg)</th></tr>` +
-    show.slice().reverse().slice(0, 20).map(r => `<tr><td>${fmtDay(r._d)}</td><td>${r['BP time'] || ''}</td><td>${r['Systolic BP']}/${r['Diastolic BP']}</td></tr>`).join('') + '</table>';
+  $('bp-table').innerHTML = ledgerRows(show.slice().reverse().slice(0, 20).map(r => ({ title: fmtDay(r._d), detail: r['BP time'] ? `at ${r['BP time']}` : '',
+    value: `${r['Systolic BP']}/${r['Diastolic BP']}`, unit: 'mmHg' })));
 }
 
-const BODY_COLS = [['weight_kg', 'Weight', 'kg', one], ['fat_pct', 'Body fat', '%', one], ['lean_kg', 'Lean mass', 'kg', one],
+const BODY_COLS = [['weight_kg', 'Weight', 'kg', two], ['fat_pct', 'Body fat', '%', one], ['lean_kg', 'Lean mass', 'kg', one],
   ['muscle_kg', 'Muscle', 'kg', one], ['water_pct', 'Water', '%', one], ['bone_kg', 'Bone', 'kg', v => v.toFixed(2)],
   ['visceral_fat', 'Visceral fat', '', one], ['bmr_kcal', 'BMR', 'kcal', int], ['protein_pct', 'Protein', '%', one],
   ['impedance_ohms', 'Impedance', 'Ω', int], ['bmi', 'BMI', '', one]];
@@ -764,25 +845,16 @@ const FOOD_COLS = [['Calories in', 'Calories in', 'kcal', 'kcal'], ['Protein g',
   ['Fat g', 'Fat', 'g', 'fat_g'], ['Fibre g', 'Fibre', 'g', 'fibre_g']];
 const KCAL_PER_G = { 'Protein g': 4, 'Carbs g': 4, 'Fat g': 9 };
 const MEAL_ORDER = ['breakfast', 'lunch', 'dinner', 'snack'];
+/** A food entry as a ledger row: the food, then meal, time and macros in whole grams, and its calories. */
+const foodRow = (f, _, __, withDate = true) => ({ title: f.name + (f.brand ? ` · ${f.brand}` : ''),
+  detail: [withDate ? `${fmtShort(f._d || toDate(f.local.slice(0, 10)))} ${f._t || f.local.slice(11)}` : f.local.slice(11), f.meal ? cap(f.meal) : '',
+    ['protein_g', 'carbs_g', 'fat_g'].filter(k => f[k] !== null && f[k] !== undefined).map(k => `${int(f[k])} g ${k.replace('_g', '').replace('carbs', 'carbs')}`).join(', ')].filter(Boolean).join(' · '),
+  value: int(f.kcal), unit: 'kcal' });
 function vsTarget(v, t, unit) {
   if (!t) return '';
-  const d = v - t, close = Math.abs(d) <= Math.max(t * 0.05, unit === 'kcal' ? 50 : 3);
-  return close ? `close to target (${int(t)})` : `${int(Math.abs(d))}${unit === 'g' ? ' g' : ''} ${d > 0 ? 'over' : 'under'} target (${int(t)})`;
+  const d = Math.round(v - t);   // exact, in whole kcal or grams
+  return d === 0 ? `on target (${int(t)})` : `${int(Math.abs(d))}${unit === 'g' ? ' g' : ''} ${d > 0 ? 'over' : 'under'} target (${int(t)})`;
 }
-const foodCard = (name, value, unit, sub, id) => `<div class="mcard"><div class="name">${esc(name)}</div><div class="value">${esc(value)}<small>${esc(unit)}</small></div><div class="usual">${esc(sub)}</div>${id ? `<div class="mini" id="${id}"></div>` : ''}</div>`;
-/** Small bars of one column's daily values over the period, with the target as a dashed line. */
-function miniDays(box, rows, col, target, fmt) {
-  const W = Math.max(140, box.clientWidth), H = 40, n = rows.length;
-  const vs = rows.map(r => r[col]).filter(v => v !== null && v !== undefined); if (!vs.length) return;
-  const hi = Math.max(...vs, target || 0) || 1, bw = W / n;
-  const svg = el('svg', { viewBox: `0 0 ${W} ${H}`, height: H, width: '100%', preserveAspectRatio: 'none' }, box);
-  rows.forEach((r, i) => { const v = r[col]; if (v) el('rect', { x: i * bw + bw * 0.1, y: H - v / hi * (H - 2), width: Math.max(1, bw * 0.8), height: v / hi * (H - 2), rx: Math.min(2, bw / 3), fill: css('--s4') }, svg); });
-  if (target) el('line', { x1: 0, x2: W, y1: H - target / hi * (H - 2), y2: H - target / hi * (H - 2), stroke: css('--text-3'), 'stroke-dasharray': '3 3', 'vector-effect': 'non-scaling-stroke' }, svg);
-  const move = ev => { const rc = svg.getBoundingClientRect(), i = Math.min(n - 1, Math.max(0, Math.floor((ev.clientX - rc.left) / rc.width * n))), r = rows[i];
-    if (r[col] === null || r[col] === undefined) { hideTip(); return; } showTip(box, ev.clientX - rc.left, ev.clientY - rc.top, `${fmtDay(r._d)}<br><b>${esc(fmt(r[col]))}</b>`); };
-  svg.addEventListener('pointermove', move); svg.addEventListener('pointerdown', move); svg.addEventListener('pointerleave', hideTip);
-}
-
 function renderFood(P) {
   const any = ROWS.some(r => r['Calories in']) || FOOD.length;
   ['food-sec', 'food-day-sec', 'food-log-sec'].forEach(id => $(id).hidden = !any);
@@ -794,20 +866,29 @@ function renderFood(P) {
   const split = fromMacros ? ` Calories from protein ${Math.round(avg('Protein g') * 4 / fromMacros * 100)}%, carbs ${Math.round(avg('Carbs g') * 4 / fromMacros * 100)}%, fat ${Math.round(avg('Fat g') * 9 / fromMacros * 100)}%.` : '';
   $('food-lead').textContent = days.length ? `Logged on ${int(days.length)} of ${int(total)} days. Averages are a day, over the days you logged.${split}`
     + (T ? ' Targets are set on the phone.' : '') : 'Nothing logged in this period.';
-  $('food-cards').innerHTML = days.length ? FOOD_COLS.map(([col, name, unit, tk]) => {
-    const v = avg(col); if (v === null) return '';
-    const sub = col === 'Calories in' ? vsTarget(v, T && T.kcal, 'kcal') : vsTarget(v, T && T[tk], 'g');
-    return foodCard(name, col === 'Calories in' ? int(v) : one(v), unit, sub, 'fc-' + tk);
-  }).join('') : '';
-  // each card's days, as small bars against the target (the last 60 days of the period at most, so bars stay visible)
-  const recent = rows.slice(-60);
-  for (const [col, , unit, tk] of FOOD_COLS) if ($('fc-' + tk)) miniDays($('fc-' + tk), recent, col, T && T[tk], v => `${col === 'Calories in' ? int(v) : one(v)} ${unit}`);
+  // three dials (calories, protein, fibre) against the phone's target, then every macro as a ledger row with a capsule bar
+  const tgt = k => T && T[k] ? T[k] : null;
+  const OVER_IS_WARN = { kcal: true, carbs_g: true, fat_g: true };
+  const dialFor = (col, name, unit, tk) => { const v = avg(col), t = tgt(tk);
+    return dial(v === null ? '–' : int(v), name, t ? `of ${int(t)}${unit === 'kcal' ? '' : ' ' + unit}` : 'no target yet', t && v !== null ? v / t : 0, OVER_IS_WARN[tk] && t && v > t * 1.05); };
+  $('food-dials').innerHTML = days.length ? dialFor('Calories in', 'Calories', 'kcal', 'kcal') + dialFor('Protein g', 'Protein', 'g', 'protein_g') + dialFor('Fibre g', 'Fibre', 'g', 'fibre_g')
+    : '<div class="empty" style="grid-column:1/-1">Nothing logged in this period.</div>';
+  $('food-cards').innerHTML = days.length ? ledgerRows(FOOD_COLS.filter(([col]) => col !== 'Calories in' && avg(col) !== null).map(([col, name, unit, tk]) => {
+    const v = avg(col), t = tgt(tk), share = KCAL_PER_G[col] && fromMacros ? `${Math.round(v * KCAL_PER_G[col] / fromMacros * 100)}% of calories` : '';
+    return { title: name, detail: [t ? vsTarget(v, t, 'g') : '', share].filter(Boolean).join(' · '), value: int(v), unit: 'g a day',
+      html: t ? capsule(v / t, OVER_IS_WARN[tk] && v > t * 1.05) : '' };
+  })) : '';
+  $('food-cards').hidden = !days.length;
   // calories each day, with the target as a line
   const size = sizeFor(P);
-  const series = size === 'day' ? [{ points: rows.map(r => ({ d: r._d, v: r['Calories in'] })), kind: 'bars', color: css('--s4') }]
-    : [{ points: bucket(rows, 'Calories in', size), kind: 'line', color: css('--s4'), mid: 0, markers: true, maxGap: 70 * MS_DAY }];
-  if (T && T.kcal) series.push({ points: [{ d: P.start, v: T.kcal }, { d: P.end, v: T.kcal }], kind: 'line', color: css('--text-3'), width: 1.5, mid: 0, maxGap: Infinity });
-  $('food-legend').innerHTML = `<span><i style="background:var(--s4)"></i>Calories in (kcal)</span>` + (T && T.kcal ? `<span><i style="background:var(--text-3)"></i>Target</span>` : '');
+  // days over target (by more than 5%) in orange, the only warning colour
+  const overT = r => T && T.kcal && r['Calories in'] > T.kcal * 1.05;
+  const series = size === 'day' ? [{ points: rows.map(r => ({ d: r._d, v: overT(r) ? null : r['Calories in'] })), kind: 'bars', color: css('--accent') },
+      { points: rows.map(r => ({ d: r._d, v: overT(r) ? r['Calories in'] : null })), kind: 'bars', color: css('--warn') }]
+    : [{ points: bucket(rows, 'Calories in', size), kind: 'line', color: css('--accent'), mid: 0, markers: true, maxGap: 70 * MS_DAY }];
+  if (T && T.kcal) series.push({ points: [{ d: P.start, v: T.kcal }, { d: P.end, v: T.kcal }], kind: 'line', color: css('--muted'), width: 1.5, mid: 0, maxGap: Infinity });
+  $('food-legend').innerHTML = `<span><i style="background:var(--accent)"></i>Calories in (kcal)</span>` +
+    (T && T.kcal ? `<span><i style="background:var(--warn)"></i>Over target</span><span><i style="background:var(--muted)"></i>Target, ${int(T.kcal)}</span>` : '');
   $('food-day-lead').textContent = size === 'day' ? 'Each bar is a day. Tap one to see that day.' : `Each point is the average for a ${sizeWord[size]}, over the days you logged.`;
   const byDate = new Map(rows.map(r => [r.Date, r]));
   timeChart($('food-chart'), { series, a: P.start, b: P.end, yMin: 0, yFmt: v => int(v), height: 200, onPick: size === 'day' ? goDay : null,
@@ -816,9 +897,8 @@ function renderFood(P) {
   // entries
   const end = addDays(P.end, 1), es = FOOD.filter(f => f._d >= P.start && f._d <= end).reverse();
   $('food-log-lead').textContent = es.length ? `${int(es.length)} entr${es.length > 1 ? 'ies' : 'y'} from the Health Sync app, newest first.` : 'No entries from the Health Sync app in this period. Totals above can also come from other apps.';
-  $('food-log').innerHTML = es.length ? `<table><tr><th>When</th><th>Meal</th><th>Food</th><th>kcal</th><th>Protein</th><th>Carbs</th><th>Fat</th></tr>` +
-    es.slice(0, 300).map(f => `<tr><td>${fmtShort(f._d)} ${esc(f._t)}</td><td>${esc(cap(f.meal || ''))}</td><td>${esc(f.name)}${f.brand ? ` <span style="color:var(--text-3)">${esc(f.brand)}</span>` : ''}</td>` +
-      `<td>${int(f.kcal)}</td><td>${f.protein_g !== null ? one(f.protein_g) + ' g' : ''}</td><td>${f.carbs_g !== null ? one(f.carbs_g) + ' g' : ''}</td><td>${f.fat_g !== null ? one(f.fat_g) + ' g' : ''}</td></tr>`).join('') + '</table>' : '';
+  $('food-log').innerHTML = es.length ? ledgerRows(es.slice(0, 300).map(foodRow)) + (es.length > 300 ? `<div class="more">and ${int(es.length - 300)} earlier</div>` : '') : '';
+  $('food-log').hidden = !es.length;
 }
 
 function renderBody(P) {
@@ -836,7 +916,7 @@ function renderBody(P) {
   if (inRange && ws.length > 1) {
     const ch = [];
     if (first.weight_kg !== null && last.weight_kg !== null) { const d = last.weight_kg - first.weight_kg;
-      ch.push(Math.abs(d) < 0.3 ? 'weight about the same' : `${one(Math.abs(d))} kg ${d > 0 ? 'heavier' : 'lighter'}`); }
+      ch.push(Math.abs(d) < 0.005 ? 'weight the same' : `${two(Math.abs(d))} kg ${d > 0 ? 'heavier' : 'lighter'}`); }
     if (first.fat_pct !== null && last.fat_pct !== null) { const d = last.fat_pct - first.fat_pct;
       ch.push(Math.abs(d) < 0.3 ? 'body fat about the same' : `body fat ${one(Math.abs(d))} points ${d > 0 ? 'higher' : 'lower'}`); }
     if (first.muscle_kg != null && last.muscle_kg != null) { const d = last.muscle_kg - first.muscle_kg;
@@ -849,7 +929,7 @@ function renderBody(P) {
   const chart = (box, k, color, unit, f) => timeChart($(box), { series: [{ points: ws.map(w => ({ d: w._d, v: w[k] })), kind: 'line', color, markers: true, maxGap: 60 * MS_DAY }],
     a, b, yFmt: v => f(v), height: 180,
     hover: d => { const w = nearestW(d, k); if (!w) return null; return { t: w._d.getTime() + MS_DAY / 2, html: `${fmtDay(w._d)} at ${w._t}<br><b>${f(w[k])}</b> ${unit}` }; } });
-  chart('body-w', 'weight_kg', css('--s1'), 'kg', one);
+  chart('body-w', 'weight_kg', css('--s1'), 'kg', two);
   // second chart: pick any measurement the weigh-ins have
   const avail = BODY_COLS.filter(([k]) => k !== 'weight_kg' && ws.some(w => w[k] !== null && w[k] !== undefined));
   if (!avail.some(([k]) => k === BODY_PICK) && avail.length) BODY_PICK = avail[0][0];
@@ -861,9 +941,11 @@ function renderBody(P) {
   }
   const sel = avail.find(([k]) => k === BODY_PICK);
   if (sel) chart('body-f', sel[0], css('--s2'), sel[2], sel[3]); else $('body-f').innerHTML = '';
-  const cols = BODY_COLS.filter(([k]) => ws.some(w => w[k] !== null && w[k] !== undefined));
-  $('body-table').innerHTML = `<table><tr><th>Date</th>${cols.map(([, n, u]) => `<th>${n}${u ? ` (${u})` : ''}</th>`).join('')}</tr>` +
-    ws.slice().reverse().slice(0, 30).map(w => `<tr><td>${fmtDay(w._d)} ${w._t}</td>${cols.map(([k, , , f]) => `<td>${w[k] === null || w[k] === undefined ? '' : esc(f(w[k]))}</td>`).join('')}</tr>`).join('') + '</table>';
+  // every weigh-in as a ledger row: when, what the scale measured, and the weight
+  $('body-table').innerHTML = ledgerRows(ws.slice().reverse().slice(0, 30).map(w => ({ title: `${fmtDay(w._d)}, ${w._t}`,
+    detail: BODY_COLS.filter(([k]) => k !== 'weight_kg' && w[k] !== null && w[k] !== undefined).slice(0, 6)
+      .map(([k, name, unit, f]) => `${name.toLowerCase()} ${f(w[k])}${unit === '%' ? '%' : unit ? ' ' + unit : ''}`).join(' · '),
+    value: w.weight_kg !== null && w.weight_kg !== undefined ? two(w.weight_kg) : '', unit: w.weight_kg !== null && w.weight_kg !== undefined ? 'kg' : '' })));
 }
 
 // ------------------------------------------------------------ compared with people your age
@@ -919,7 +1001,7 @@ function bandStrip(segs, v, fmtEdge) {
   let at = null;
   segs.forEach((s, i) => {
     const mine = v !== null && v >= (s.from === null ? -Infinity : s.from) && (s.to === null || v < s.to);
-    el('rect', { x: i * w + 1, y: 4, width: w - 2, height: 14, rx: 4, fill: mine ? css('--s1') : css('--grid') }, svg);
+    el('rect', { x: i * w + 1, y: 6, width: w - 2, height: 10, rx: 5, fill: mine ? css('--accent') : css('--hairline') }, svg);
     el('text', { x: i * w + w / 2, y: 34, 'text-anchor': 'middle', 'font-size': 12, fill: mine ? css('--text') : css('--text-3'), 'font-weight': mine ? 650 : 400 }, svg).textContent = s.label;
     if (i) el('text', { x: i * w, y: 48, 'text-anchor': 'middle', 'font-size': 11, fill: css('--text-3') }, svg).textContent = fmtEdge(s.from);
     if (mine) {
@@ -939,7 +1021,7 @@ function spreadStrip(p10, p50, p90, v, fmt) {
   const X = x => (x - lo) / (hi - lo) * W;
   const svg = document.createElementNS(NS, 'svg'); svg.setAttribute('viewBox', `0 0 ${W} ${H}`); svg.setAttribute('height', H); svg.setAttribute('role', 'img');
   el('rect', { x: 0, y: 9, width: W, height: 4, rx: 2, fill: css('--grid') }, svg);
-  el('rect', { x: X(p10), y: 4, width: X(p90) - X(p10), height: 14, rx: 4, fill: css('--accent-soft'), stroke: css('--line') }, svg);
+  el('rect', { x: X(p10), y: 4, width: X(p90) - X(p10), height: 14, rx: 7, fill: css('--range') }, svg);
   el('line', { x1: X(p50), x2: X(p50), y1: 4, y2: 18, stroke: css('--text-3'), 'stroke-width': 2 }, svg);
   for (const [x, label] of [[p10, fmt(p10)], [p50, `middle ${fmt(p50)}`], [p90, fmt(p90)]])
     el('text', { x: X(x), y: 34, 'text-anchor': 'middle', 'font-size': 11, fill: css('--text-3') }, svg).textContent = label;
@@ -1056,7 +1138,7 @@ function renderYou(A, age) {
 
 // ------------------------------------------------------------ one day
 let DAY = null, DAYDATA = null;
-const STAGES = [['awake', 'Awake', '--s4'], ['asleepREM', 'REM', '--s1'], ['asleepCore', 'Core', '--s7'], ['asleepUnspecified', 'Asleep', '--s7'], ['asleepDeep', 'Deep', '--s3']];
+const STAGES = [['awake', 'Awake', '--muted'], ['asleepREM', 'REM', '--accent-tint'], ['asleepCore', 'Core', '--accent'], ['asleepUnspecified', 'Asleep', '--accent'], ['asleepDeep', 'Deep', '--accent-deep']];
 // Measures that are also in the daily summary, so the day can be set against your usual.
 const DAY_USUAL = { HKQuantityTypeIdentifierStepCount: 'Steps', HKQuantityTypeIdentifierDistanceWalkingRunning: 'Distance (km)',
   HKQuantityTypeIdentifierAppleExerciseTime: 'Exercise min', HKQuantityTypeIdentifierActiveEnergyBurned: 'Active kcal',
@@ -1106,7 +1188,7 @@ function dayChart(box, { lo, hi, series, bands = [], height = 180, yFmt = int, y
     } else {
       let d = '', prev = null;
       for (const [m, v] of s.points) { d += `${prev !== null && m - prev <= (s.gap || 20) ? 'L' : 'M'}${X(m).toFixed(1)},${Y(v).toFixed(1)}`; prev = m; }
-      el('path', { d, fill: 'none', stroke: s.color, 'stroke-width': 1.6, 'stroke-linejoin': 'round' }, svg);
+      el('path', { d, fill: 'none', stroke: s.color, 'stroke-width': 2, 'stroke-linejoin': 'round' }, svg);
     }
   }
   if (!hover) return;
@@ -1159,34 +1241,22 @@ function renderDay() {
   // "Usual" = your middle value over the 90 days before this one, for measures in the daily summary.
   const before = ROWS.filter(r => r._d < d && r._d >= addDays(d, -90));
   const usual = col => { const u = before.length >= 14 ? median(vals(before, col)) : null; return u; };
-  const away = D.tz !== META.home_tz ? ` · in ${esc(D.place)}` : '';
-  const sum = [];
-  if (row.Steps) sum.push(`${int(row.Steps)} steps`);
-  if (D.workouts.length) sum.push(`${D.workouts.length} workout${D.workouts.length > 1 ? 's' : ''}`);
-  if (row['Sleep (h)']) sum.push(`${hm(row['Sleep (h)'])} of sleep the night before`);
-  let h = `<h3 style="font-size:16px;margin:0 0 2px">${fmtDay(d)}${away}</h3><p class="lead">${sum.length ? esc(cap(listWords(sum))) + '.' : 'Nothing recorded this day.'}` +
-    ' Each small chart runs from midnight to midnight; hover or tap it for the times.</p><div id="day-groups-slot"></div>';
-  h += `<div class="daypart"><h3>Heart rate through the day</h3><div class="legend"><span><i style="background:var(--s2)"></i>Heart rate (bpm)</span>` +
-    `${D.sleep ? '<span><i style="background:var(--s7);opacity:.4"></i>Asleep</span>' : ''}${D.workouts.length ? '<span><i style="background:var(--s3);opacity:.4"></i>Workout</span>' : ''}</div><div class="chart" id="day-hr"></div></div>`;
-  h += `<div class="daypart"><h3>Steps each hour</h3><div class="chart" id="day-steps"></div></div>`;
-  if (D.sleep) {
-    const st = D.sleep.stages, part = (k, n) => st[k] ? `${n} ${mins(st[k])}` : null;
-    const parts = [part('asleepDeep', 'deep'), part('asleepCore', 'core'), part('asleepREM', 'REM'), part('awake', 'awake')].filter(Boolean);
-    h += `<div class="daypart"><h3>The night before</h3><p class="lead">Asleep ${hm(D.sleep.asleep_h)} between ${clock(D.sleep.start / 60)} and ${clock(D.sleep.end / 60)}` +
-      `${parts.length ? ': ' + esc(parts.join(', ')) : ''}. Woke ${D.sleep.awakenings} time${D.sleep.awakenings === 1 ? '' : 's'}. From ${esc(D.sleep.source || 'unknown')}.` +
-      `${D.sleep.tz !== D.tz ? ` The night's records say ${esc(D.sleep.place)} time; times here are in ${esc(D.place)} time, like the rest of the day.` : ''}</p><div class="chart" id="day-sleep"></div></div>`;
-  }
-  if (D.workouts.length) {
-    h += `<div class="daypart"><h3>Workouts</h3><div class="tablewrap" style="max-height:none"><table><tr><th>Time</th><th>Workout</th><th>Duration</th><th>Distance</th><th>Energy</th><th>Heart rate</th></tr>` +
-      D.workouts.map(w => `<tr><td>${esc(w.time)}</td><td>${esc(words(w.type))}</td><td>${mins(w.minutes)}</td><td>${w.km ? esc(w.km.toFixed(2)) + ' km' : ''}</td>` +
-        `<td>${w.kcal ? int(w.kcal) + ' kcal' : ''}</td><td>${w.avg_hr ? `${w.avg_hr} average, ${w.max_hr} max` : ''}</td></tr>`).join('') + '</table></div></div>';
-  }
-  // Everything the Watch tracked that day, by group, each with its shape across the day.
+  const chapter = (title, inner, lead) => `<div class="daypart"><div class="chart-head"><h3>${esc(title)}</h3><span class="spacer"></span></div>` +
+    (lead ? `<p class="lead">${lead}</p>` : '') + inner + '</div>';
+  // Three dials: steps and sleep against your usual, calories against the phone's target (or active energy against usual).
+  const T = META.food_target, uSteps = usual('Steps'), uSleep = usual('Sleep (h)'), uKcal = usual('Active kcal');
+  const dials = [dial(row.Steps ? int(row.Steps) : '–', 'Steps', uSteps !== null ? `usual ${int(uSteps)}` : 'no usual yet', uSteps && row.Steps ? row.Steps / uSteps : 0),
+    dial(row['Sleep (h)'] ? hm(row['Sleep (h)']).replace(' min', '') : '–', 'Sleep', uSleep !== null ? `usual ${hm(uSleep)}` : 'no usual yet', uSleep && row['Sleep (h)'] ? row['Sleep (h)'] / uSleep : 0)];
+  if (row['Calories in']) dials.push(dial(int(row['Calories in']), 'Calories in', T && T.kcal ? `of ${int(T.kcal)}` : 'no target yet',
+    T && T.kcal ? row['Calories in'] / T.kcal : 0, T && T.kcal && row['Calories in'] > T.kcal * 1.05));
+  else dials.push(dial(row['Active kcal'] ? int(row['Active kcal']) : '–', 'Active energy', uKcal !== null ? `usual ${int(uKcal)} kcal` : 'no usual yet', uKcal && row['Active kcal'] ? row['Active kcal'] / uKcal : 0));
+  let h = `<div class="daypart" style="margin-top:22px"><div class="box"><div class="dials">${dials.join('')}</div></div></div>`;
+  // Everything the Watch tracked that day, by group, each in an equal card with its shape across the day.
   const cards = {};
-  // A measure with a chart's worth of data gets a card with its midnight-to-midnight chart; one with a reading or
-  // two (wrist temperature, resting heart rate, a short bike ride) is just the number and when, in a small card.
-  if (row['Sleep (h)']) (cards.Overnight = cards.Overnight || []).push({ name: 'Sleep', value: hm(row['Sleep (h)']), unit: '', small: true,
-    sub: [D.sleep ? `${clock(D.sleep.start / 60)} to ${clock(D.sleep.end / 60)}` : '', usual('Sleep (h)') !== null ? `usual ${hm(usual('Sleep (h)'))}` : ''].filter(Boolean).join(' · ') });
+  // A measure with a chart's worth of data gets its midnight-to-midnight chart; one with a reading or two (wrist
+  // temperature, resting heart rate, a short bike ride) shows the number and when, in a card of the same size.
+  if (row['Sleep (h)']) (cards.Overnight = cards.Overnight || []).push({ name: 'Sleep', value: hm(row['Sleep (h)']), unit: '',
+    sub: [D.sleep ? `${clock(D.sleep.start / 60)} to ${clock(D.sleep.end / 60)}` : '', uSleep !== null ? `usual ${hm(uSleep)}` : ''].filter(Boolean).join(' · ') });
   (D.metrics || []).forEach((m, i) => {
     const f = v => m.decimals ? v.toLocaleString('en-GB', { minimumFractionDigits: m.decimals, maximumFractionDigits: m.decimals }) : int(v);
     const col = DAY_USUAL[m.key], u = col ? usual(col) : null;
@@ -1198,38 +1268,45 @@ function renderDay() {
     else if (m.how === 'sum' && hours.length <= 2) { small = true; sub.push(hours.map(([hr, v]) => hours.length > 1 ? `${clock(hr)} ${withUnit(v)}` : `${clock(hr)}–${clock(hr + 1)}`).join(' · ')); }
     else if (m.how === 'avg') sub.push(`${f(m.low)}–${f(m.high)}${pct} over ${int(m.count)} readings`);
     if (u !== null) sub.push(`usual ${f(u)}`);
-    (cards[m.group] = cards[m.group] || []).push({ name: m.name, value: f(m.value), unit: m.unit, sub: sub.filter(Boolean).join(' · '), small,
+    (cards[m.group] = cards[m.group] || []).push({ name: m.name, value: f(m.value), unit: m.unit, sub: sub.filter(Boolean).join(' · '),
       m, id: small ? null : 'mc-' + i, fmt: f });
   });
-  let groups = '';
-  for (const g of (D.groups || []).filter(g => cards[g])) {
-    const card = c => `<div class="mcard"><div class="name">${esc(c.name)}</div><div class="value">${esc(c.value)}<small>${esc(c.unit)}</small></div>` +
-      `<div class="usual">${esc(c.sub)}</div>${c.id ? `<div class="mini" id="${c.id}"></div>` : ''}</div>`;
-    groups += `<div class="daypart"><h3>${esc(g)}</h3><div class="mcards">${cards[g].map(card).join('')}</div></div>`;
-  }
+  const card = c => `<div class="mcard"><div class="name">${esc(c.name)}</div><div class="value">${esc(c.value)}<small>${esc(c.unit)}</small></div>` +
+    `<div class="usual">${esc(c.sub)}</div>${c.id ? `<div class="mini" id="${c.id}"></div>` : ''}</div>`;
+  const groups = (D.groups || []).filter(g => cards[g]);
+  groups.forEach((g, i) => { h += chapter(g, `<div class="mcards">${cards[g].map(card).join('')}</div>`,
+    i === 0 ? 'Each small chart runs from midnight to midnight; hover or tap it for the times.' : ''); });
+  // Food: the day's totals against the target, then each entry by meal.
   if (row['Calories in']) {
-    const T = META.food_target;
-    groups += `<div class="daypart"><h3>Food</h3><div class="mcards">` + FOOD_COLS.filter(([c]) => row[c] !== null && row[c] !== undefined).map(([c, name, unit, tk]) =>
-      foodCard(name, c === 'Calories in' ? int(row[c]) : one(row[c]), unit, c === 'Calories in' ? vsTarget(row[c], T && T.kcal, 'kcal') : vsTarget(row[c], T && T[tk], 'g'))).join('') + '</div>';
-    const es = D.food || [];
-    if (es.length) groups += '<div class="tablewrap" style="max-height:none;margin-top:10px"><table><tr><th>Time</th><th>Meal</th><th>Food</th><th>kcal</th><th>Protein</th><th>Carbs</th><th>Fat</th></tr>' +
-      es.slice().sort((a, b) => (MEAL_ORDER.indexOf(a.meal) - MEAL_ORDER.indexOf(b.meal)) || a.local.localeCompare(b.local)).map(f =>
-        `<tr><td>${esc(f.local.slice(11))}</td><td>${esc(cap(f.meal || ''))}</td><td>${esc(f.name)}</td><td>${int(f.kcal)}</td>` +
-        `<td>${f.protein_g !== null ? one(f.protein_g) + ' g' : ''}</td><td>${f.carbs_g !== null ? one(f.carbs_g) + ' g' : ''}</td><td>${f.fat_g !== null ? one(f.fat_g) + ' g' : ''}</td></tr>`).join('') + '</table></div>';
-    groups += '</div>';
+    const totals = FOOD_COLS.filter(([c]) => row[c] !== null && row[c] !== undefined && c !== 'Calories in').map(([c, name]) => `${int(row[c])} g ${name.toLowerCase()}`);
+    const es = (D.food || []).slice().sort((a, b) => (MEAL_ORDER.indexOf(a.meal) - MEAL_ORDER.indexOf(b.meal)) || a.local.localeCompare(b.local));
+    h += chapter('Food', es.length ? `<div class="ledger">${ledgerRows(es.map(f => foodRow(f, 0, 0, false)))}</div>` : '',
+      esc(`${int(row['Calories in'])} kcal${totals.length ? ', ' + listWords(totals) : ''}.` + (T && T.kcal ? ` ${cap(vsTarget(row['Calories in'], T.kcal, 'kcal'))}.` : '')));
   }
-  h = h.replace('<div id="day-groups-slot"></div>', groups);   // the day's numbers come first, then the charts
-  const extra = [];
-  if (D.bp.length) extra.push('Blood pressure: ' + D.bp.map(b => `${b.systolic}/${b.diastolic} mmHg at ${b.time}`).join(', ') + '.');
-  if (D.weighins.length) extra.push('Weigh-in: ' + D.weighins.map(w => `${one(w.weight_kg)} kg${w.fat_pct ? `, ${one(w.fat_pct)}% fat` : ''} at ${w.time}`).join('; ') + '.');
-  if (extra.length) h += `<div class="daypart"><h3>Readings</h3><p class="lead">${esc(extra.join(' '))}</p></div>`;
+  h += chapter('Heart rate through the day', `<div class="box"><div class="legend"><span><i style="background:var(--accent)"></i>Heart rate (bpm)</span>` +
+    `${D.sleep ? '<span><i style="background:var(--accent-deep);opacity:.35"></i>Asleep</span>' : ''}${D.workouts.length ? '<span><i style="background:var(--accent-tint);opacity:.45"></i>Workout</span>' : ''}</div>` +
+    '<div class="chart" id="day-hr"></div></div>');
+  h += chapter('Steps each hour', '<div class="box"><div class="chart" id="day-steps"></div></div>');
+  if (D.sleep) {
+    const st = D.sleep.stages, part = (k, n) => st[k] ? `${n} ${mins(st[k])}` : null;
+    const parts = [part('asleepDeep', 'deep'), part('asleepCore', 'core'), part('asleepREM', 'REM'), part('awake', 'awake')].filter(Boolean);
+    h += chapter('The night before', `<div class="box"><p class="lead">Asleep ${hm(D.sleep.asleep_h)} between ${clock(D.sleep.start / 60)} and ${clock(D.sleep.end / 60)}` +
+      `${parts.length ? ': ' + esc(parts.join(', ')) : ''}. Woke ${D.sleep.awakenings} time${D.sleep.awakenings === 1 ? '' : 's'}. From ${esc(D.sleep.source || 'unknown')}.` +
+      `${D.sleep.tz !== D.tz ? ` The night's records say ${esc(D.sleep.place)} time; times here are in ${esc(D.place)} time, like the rest of the day.` : ''}</p><div class="chart" id="day-sleep"></div></div>`);
+  }
+  if (D.workouts.length) h += chapter('Workouts', `<div class="ledger">${ledgerRows(D.workouts.map(w => ({ title: words(w.type),
+    detail: [w.time, mins(w.minutes), w.km ? `${w.km.toFixed(2)} km` : '', w.avg_hr ? `${w.avg_hr} bpm average, ${w.max_hr} max` : ''].filter(Boolean).join(' · '),
+    value: w.kcal ? int(w.kcal) : '', unit: w.kcal ? 'kcal' : '' })))}</div>`);
+  const readings = D.bp.map(b => ({ title: 'Blood pressure', detail: `at ${b.time}`, value: `${b.systolic}/${b.diastolic}`, unit: 'mmHg' }))
+    .concat(D.weighins.map(w => ({ title: 'Weigh-in', detail: [`at ${w.time}`, w.fat_pct ? `${one(w.fat_pct)}% fat` : ''].filter(Boolean).join(' · '), value: two(w.weight_kg), unit: 'kg' })));
+  if (readings.length) h += chapter('Readings', `<div class="ledger">${ledgerRows(readings)}</div>`);
   box.innerHTML = h;
 
   const bands = [];
-  if (D.sleep) bands.push({ from: D.sleep.start, to: D.sleep.end, color: css('--s7') });
-  for (const w of D.workouts) bands.push({ from: w.start, to: w.end, color: css('--s3') });
+  if (D.sleep) bands.push({ from: D.sleep.start, to: D.sleep.end, color: css('--accent-deep') });
+  for (const w of D.workouts) bands.push({ from: w.start, to: w.end, color: css('--accent-tint') });
   const lo = Math.min(0, D.sleep ? Math.floor(D.sleep.start / 60) * 60 : 0), hi = 1440;
-  dayChart($('day-hr'), { lo, hi, series: [{ kind: 'line', points: D.heart.filter(p => p[0] >= lo), color: css('--s2') }], bands, hover: m => {
+  dayChart($('day-hr'), { lo, hi, series: [{ kind: 'line', points: D.heart.filter(p => p[0] >= lo), color: css('--accent') }], bands, hover: m => {
     let best = null; for (const p of D.heart) if (best === null || Math.abs(p[0] - m) < Math.abs(best[0] - m)) best = p;
     if (!best || Math.abs(best[0] - m) > 30) return null;
     const w = D.workouts.find(x => best[0] >= x.start && best[0] <= x.end);
@@ -1240,6 +1317,7 @@ function renderDay() {
     hover: m => { const hr = Math.floor(m / 60), p = D.steps_hourly.find(x => x[0] === hr); if (!p || !p[1]) return null;
       return { m: hr * 60 + 30, html: `${clock(hr)} to ${clock(hr + 1)}<br><b>${int(p[1])}</b> steps` }; } });
   if (D.sleep) hypnogram($('day-sleep'), D.sleep);
+  if (TAB === 'day') headline();
   for (const g of Object.values(cards)) for (const c of g) if (c.id && c.m) miniDay($(c.id), c.m, c.fmt);
 }
 
@@ -1251,16 +1329,16 @@ function miniDay(box, m, f) {
   let find;
   if (m.hourly) {
     const hi = m.how === 'stood' ? 1 : Math.max(...m.hourly.map(p => p[1])) || 1, bw = W / 24 - 1.5;
-    for (const [hr, v] of m.hourly) el('rect', { x: X(hr * 60) + 0.75, y: H - 2 - (v / hi) * (H - 4), width: bw, height: Math.max(1, (v / hi) * (H - 4)), rx: 1.5, fill: css('--s1') }, svg);
+    for (const [hr, v] of m.hourly) el('rect', { x: X(hr * 60) + 0.75, y: H - 2 - (v / hi) * (H - 4), width: bw, height: Math.max(1, (v / hi) * (H - 4)), rx: Math.min(bw / 2, 3), fill: css('--accent') }, svg);
     find = mn => { const hr = Math.floor(mn / 60), p = m.hourly.find(x => x[0] === hr);
       return `${clock(hr)}–${clock(hr + 1)}<br><b>${p ? (m.how === 'stood' ? 'stood' : esc(f(p[1])) + (m.unit ? ' ' + esc(m.unit) : '')) : (m.how === 'stood' ? 'no stand' : 'none')}</b>`; };
   } else {
     const pts = m.points.filter(p => p[0] >= 0 && p[0] < 1440); if (!pts.length) return;
     const vs = pts.map(p => p[1]), lo = Math.min(...vs), hi = Math.max(...vs), Y = v => hi === lo ? H / 2 : H - 4 - (v - lo) / (hi - lo) * (H - 8);
     // Readings that come in bursts (walking, blood oxygen) are dots; only a steady stream (heart rate) is a line.
-    if (pts.length <= 60) pts.forEach(p => el('circle', { cx: X(p[0]), cy: Y(p[1]), r: 2.2, fill: css('--s2') }, svg));
+    if (pts.length <= 60) pts.forEach(p => el('circle', { cx: X(p[0]), cy: Y(p[1]), r: 2.2, fill: css('--accent') }, svg));
     else { let dd = '', prev = null; for (const [mn, v] of pts) { dd += `${prev !== null && mn - prev <= 60 ? 'L' : 'M'}${X(mn).toFixed(1)},${Y(v).toFixed(1)}`; prev = mn; }
-      el('path', { d: dd, fill: 'none', stroke: css('--s2'), 'stroke-width': 1.5, 'vector-effect': 'non-scaling-stroke' }, svg); }
+      el('path', { d: dd, fill: 'none', stroke: css('--accent'), 'stroke-width': 1.5, 'vector-effect': 'non-scaling-stroke' }, svg); }
     find = mn => { let b = null; for (const p of pts) if (!b || Math.abs(p[0] - mn) < Math.abs(b[0] - mn)) b = p;
       return b && Math.abs(b[0] - mn) <= 90 ? `${clock(b[0] / 60)}<br><b>${esc(f(b[1]))}</b>${m.unit ? ' ' + esc(m.unit) : ''}` : null; };
   }
@@ -1269,13 +1347,61 @@ function miniDay(box, m, f) {
   svg.addEventListener('pointermove', move); svg.addEventListener('pointerdown', move); svg.addEventListener('pointerleave', hideTip);
 }
 
+// ------------------------------------------------------------ headline
+// Each chapter opens with one or two sentences written from its own numbers (Daylight: written, not dashboarded).
+function headline() {
+  const H = $('headline');
+  if (!META.version || !ROWS.length) { H.textContent = META.version ? 'Your numbers appear here once the phone has synced.' : ''; return; }
+  const P = periods(), cur = between(...P.cur);
+  const over = RANGE === 'all' || RANGE === '365' ? 'over the last 12 months' : `over the last ${RANGE} days`;
+  const avg = col => mean(vals(cur, col));
+  let t = '';
+  if (TAB === 'overview') {
+    const st = avg('Steps'), sl = avg('Sleep (h)'), parts = [];
+    if (st !== null) parts.push(`${int(st)} steps a day`);
+    if (sl !== null) parts.push(`${hm(sl)} of sleep a night`);
+    t = parts.length ? `${cap(listWords(parts))} ${over}.` : `Not much recorded ${over}.`;
+    const w = compare(METRICS.find(m => m.k === 'weight'), P);
+    if (w.delta !== undefined && Math.abs(w.delta) >= 0.3) t += ` Weight ${two(Math.abs(w.delta))} kg ${w.delta < 0 ? 'lighter' : 'heavier'} than ${P.baseName}.`;
+  } else if (TAB === 'day') {
+    const D = DAYDATA, row = (D && D.row) || {};
+    if (!D) t = DAY ? fmtDay(toDate(DAY)) + '.' : '';
+    else {
+      const sum = [];
+      if (row.Steps) sum.push(`${int(row.Steps)} steps`);
+      if (D.workouts.length) sum.push(`${D.workouts.length} workout${D.workouts.length > 1 ? 's' : ''}`);
+      if (row['Sleep (h)']) sum.push(`${hm(row['Sleep (h)'])} of sleep`);
+      t = `${fmtDay(toDate(D.date))}${D.tz !== META.home_tz ? `, in ${D.place}` : ''}. ` + (sum.length ? `${cap(listWords(sum))}.` : 'Nothing recorded.');
+    }
+  } else if (TAB === 'activity') {
+    const wk = workoutTotals(cur), st = avg('Steps');
+    t = wk.count ? `${int(wk.count)} workout${wk.count > 1 ? 's' : ''}, ${mins(wk.total)} in total ${over}${wk.top ? `, mostly ${wk.top.toLowerCase()}` : ''}.`
+      : st !== null ? `${int(st)} steps a day ${over}, and no workouts.` : `No activity recorded ${over}.`;
+  } else if (TAB === 'sleep') {
+    const sl = avg('Sleep (h)'), bed = avg('Bedtime (hrs)');
+    t = sl !== null ? `${hm(sl)} a night ${over}${bed !== null ? `, asleep at ${clock(bed)} on average` : ''}.` : `No sleep recorded ${over}.`;
+  } else if (TAB === 'body') {
+    const w = BODY.filter(x => x.weight_kg !== null && x.weight_kg !== undefined).pop();
+    t = w ? `${two(w.weight_kg)} kg at your last weigh-in, ${fmtShort(w._d)}${w.fat_pct !== null && w.fat_pct !== undefined ? `, ${one(w.fat_pct)}% body fat` : ''}.` : 'No weigh-ins yet.';
+  } else if (TAB === 'food') {
+    const days = cur.filter(r => r['Calories in']), T = META.food_target;
+    if (!days.length) t = `Nothing logged ${over}.`;
+    else { const k = mean(vals(days, 'Calories in'));
+      t = `${int(k)} kcal a day on the ${int(days.length)} day${days.length > 1 ? 's' : ''} you logged` + (T && T.kcal ? `, ${vsTarget(k, T.kcal, 'kcal').replace('target', 'your target')}.` : '.'); }
+  } else if (TAB === 'compared') {
+    const A = META.about || {}, age = ageOn(A.dob, new Date());
+    t = age !== null ? `Your numbers next to published figures for ${A.sex === 'male' ? 'men' : 'adults'} aged ${age}.` : 'Add your date of birth in Apple Health to compare with people your age.';
+  }
+  H.textContent = t.replace(/(\d) (h|min|kg|kcal|steps|g|workouts?|days?)\b/g, '$1\u00a0$2');   // keep a number with its unit
+}
+
 function renderAll(top = true) {
   hideTip();
   document.querySelectorAll('.ranges button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.range === RANGE)));
   renderHeader();
   if (!ROWS.length) {
-    $('changes').innerHTML = META.summary_ready && !META.days_to_prepare ? '<li>No data yet. Once the phone has synced, your numbers appear here.</li>'
-      : '<li>Your numbers appear here as soon as the first days are ready.</li>';
+    $('changes').innerHTML = META.summary_ready && !META.days_to_prepare ? '<div class="empty">No data yet. Once the phone has synced, your numbers appear here.</div>'
+      : '<div class="empty">Your numbers appear here as soon as the first days are ready.</div>';
     return;
   }
   const P = periods();
@@ -1306,6 +1432,7 @@ const origRender = renderAll;
 renderAll = (top = true) => {
   if (!META.version) return;   // nothing loaded yet (e.g. a range tapped while loading)
   try { localStorage.setItem('hs-metric', METRIC); } catch (e) {} origRender(top);
+  headline();
   // a tab whose sections are all hidden (no data of that kind yet) says so
   $('tab-empty').hidden = [...document.querySelectorAll(`[data-tab="${TAB}"]`)].some(e => !e.hidden);
 };
@@ -1322,6 +1449,8 @@ function setTab(t, push = true) {
   TAB = t;
   document.querySelectorAll('[data-tab]').forEach(e => e.classList.toggle('tab-off', e.dataset.tab !== t));
   document.querySelectorAll('#tabs button').forEach(b => b.setAttribute('aria-selected', String(b.dataset.go === t)));
+  const sel = document.querySelector(`#tabs button[data-go="${t}"]`);   // on a phone the masthead scrolls: keep the chapter in view
+  if (sel) { const nav = $('tabs'); nav.scrollLeft = Math.max(0, sel.offsetLeft - nav.offsetLeft - 24); }
   const ranged = t !== 'day';   // the day tab has its own day picker instead of a time range
   $('range-bar').classList.toggle('tab-off', !ranged); $('period').classList.toggle('tab-off', !ranged);
   try { localStorage.setItem('hs-tab', t); } catch (e) {}
@@ -1334,6 +1463,18 @@ const goDay = ds => { setTab('day'); openDay(ds); window.scrollTo({ top: 0 }); }
 { let t = location.hash.slice(1); if (!TABS.includes(t)) { try { t = localStorage.getItem('hs-tab'); } catch (e) {} } setTab(t || 'overview', true); }
 $('ck-prev').addEventListener('click', () => CK_WEEK && loadCheckin(iso(addDays(toDate(CK_WEEK), -7))));
 $('ck-next').addEventListener('click', () => CK_WEEK && loadCheckin(iso(addDays(toDate(CK_WEEK), 7))));
+// Chapters (Daylight's ChapterSection): each section's title becomes an eyebrow with a hairline running to the right,
+// and everything under it goes in one white card, except .plain sections, which hold their own cards.
+document.querySelectorAll('section').forEach(sec => {
+  let head = sec.querySelector(':scope > .chart-head');
+  const h2 = sec.querySelector(':scope > h2');
+  if (!head && h2) { head = document.createElement('div'); head.className = 'chart-head'; sec.insertBefore(head, h2); head.appendChild(h2);
+    const sp = document.createElement('span'); sp.className = 'spacer'; head.appendChild(sp); }
+  if (sec.classList.contains('plain')) return;
+  const box = document.createElement('div'); box.className = 'box';
+  [...sec.children].filter(c => c !== head).forEach(c => box.appendChild(c));
+  sec.appendChild(box);
+});
 let resizeTimer; window.addEventListener('resize', () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(() => renderAll(), 150); });
 matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => renderAll());
 

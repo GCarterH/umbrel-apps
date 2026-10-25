@@ -675,27 +675,39 @@ def setup_page(request: Request):
         return HTMLResponse('<p>Health Sync server {} is running. The setup page is turned off; the token is in the server log.</p>'.format(__version__))
     url = config.PUBLIC_URL or str(request.base_url).rstrip('/')
     link = config_link(url, STATE['token'])
-    qr = segno.make(link, error='m').svg_inline(scale=6, border=2, dark='#1F4E5A')
+    qr = segno.make(link, error='m').svg_inline(scale=6, border=2, dark='#000000')
     s = status_data()
+    newest = html.escape((s['newest'] or 'none yet').replace('T', ' ').replace('Z', ' UTC'))
+    last = html.escape((s['last_upload'] or 'none yet').replace('T', ' ').replace('Z', ' UTC'))
+    # Daylight, as the dashboard: grey page, white cards (radius 24, no border), one blue accent, rounded figures.
     return HTMLResponse(f"""<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Connect a phone</title><link rel="icon" href="/icon.png"><link rel="apple-touch-icon" href="/icon.png"><style>
-body{{font-family:-apple-system,system-ui,sans-serif;max-width:640px;margin:2rem auto;padding:0 16px;color:#1d2a2e;background:#fff}}
-code{{background:#eef3f4;padding:.2rem .4rem;border-radius:4px;word-break:break-all}} .qr svg{{max-width:100%;height:auto}}
-button{{font:inherit;padding:.4rem .9rem}} small{{color:#5a6b70}}
-@media (prefers-color-scheme:dark){{body{{background:#121a1c;color:#e4eef0}} code{{background:#22313a}} .qr{{background:#fff;display:inline-block;padding:8px;border-radius:8px}}}}
-</style></head><body>
-<p><a href="/">&larr; Dashboard</a></p>
-<h1><img src="/icon.png" alt="" width="48" height="48" style="vertical-align:middle;margin-right:.5rem">Connect a phone</h1>
-<p style="margin-top:-.8rem"><small>Version {__version__}</small></p>
-<p>In the iPhone app go to <b>Settings</b> and scan this code, or type the address and token.</p>
-<div class="qr">{qr}</div>
-<p>Server address: <code>{html.escape(url)}</code><br>Token: <code>{html.escape(STATE['token'])}</code></p>
-<p><small>Records stored: {s['total_records']:,} &middot; waiting to be written: {s['queued_records']:,} &middot;
-duplicates skipped (since 0.1.9): {s['duplicate_records']:,} &middot; newest: {html.escape(s['newest'] or 'none yet')} &middot;
-last upload: {html.escape(s['last_upload'] or 'none yet')} &middot; database: {s['database_mb']} MB</small></p>
-<form method="post" action="/setup/rotate" onsubmit="return confirm('Make a new token? The phone stops syncing until you scan the new code.')">
+:root{{color-scheme:light;--page:#F2F2F7;--surface:#FFFFFF;--raised:#F2F2F7;--hairline:rgba(0,0,0,.08);--text:#000;--muted:#8A8A8F;--accent:#007AFF;--soft:rgba(0,122,255,.10)}}
+@media (prefers-color-scheme:dark){{:root{{color-scheme:dark;--page:#000;--surface:#1C1C1E;--raised:#2C2C2E;--hairline:rgba(255,255,255,.1);--text:#fff;--muted:#8E8E93;--accent:#0A84FF;--soft:rgba(10,132,255,.18)}}}}
+body{{margin:0;background:var(--page);color:var(--text);font:17px/1.4 -apple-system,BlinkMacSystemFont,"SF Pro Text",system-ui,sans-serif;-webkit-font-smoothing:antialiased}}
+main{{max-width:560px;margin:0 auto;padding:18px 24px 56px}} a{{color:var(--accent);font-weight:600;text-decoration:none}}
+h1{{font-size:30px;font-weight:700;margin:22px 0 6px}} .muted{{color:var(--muted);font-size:13px}}
+.box{{background:var(--surface);border-radius:24px;padding:20px;margin-top:22px}} .qr{{background:#fff;border-radius:16px;padding:10px;display:inline-block}} .qr svg{{display:block;max-width:100%;height:auto}}
+.row{{padding:12px 0;border-top:1px solid var(--hairline)}} .row:first-child{{border-top:0;padding-top:0}} .label{{color:var(--muted);font-size:13px;font-weight:600}}
+code{{font:15px ui-monospace,SFMono-Regular,Menlo,monospace;word-break:break-all;user-select:all}}
+.fig{{font-family:ui-rounded,"SF Pro Rounded",-apple-system,sans-serif;font-variant-numeric:tabular-nums;font-weight:600}}
+button{{font:inherit;font-size:15px;font-weight:600;border:0;border-radius:999px;padding:8px 18px;background:var(--soft);color:var(--accent);cursor:pointer;width:100%}}
+</style></head><body><main>
+<p style="margin:0"><a href="/">&lsaquo; Dashboard</a></p>
+<h1>Connect a phone</h1>
+<div class="muted">Health Sync {__version__}</div>
+<div class="box" style="text-align:center"><p style="margin:0 0 14px">In the Health Sync app, open <b>Settings</b> and scan this code.</p><div class="qr">{qr}</div></div>
+<div class="box"><div class="row"><div class="label">Server address</div><code>{html.escape(url)}</code></div>
+<div class="row"><div class="label">Token</div><code>{html.escape(STATE['token'])}</code></div></div>
+<div class="box"><div class="row"><div class="label">Records stored</div><span class="fig">{s['total_records']:,}</span></div>
+<div class="row"><div class="label">Waiting to be written</div><span class="fig">{s['queued_records']:,}</span></div>
+<div class="row"><div class="label">Newest record</div><span class="fig">{newest}</span></div>
+<div class="row"><div class="label">Last upload</div><span class="fig">{last}</span></div>
+<div class="row"><div class="label">Database</div><span class="fig">{s['database_mb']:,} MB</span></div></div>
+<form method="post" action="/setup/rotate" style="margin-top:22px" onsubmit="return confirm('Make a new token? The phone stops syncing until you scan the new code.')">
 <button>Make a new token</button></form>
-</body></html>""")
+<p class="muted">A new token stops the phone syncing until you scan the new code.</p>
+</main></body></html>""")
 
 
 @app.get('/icon.png', include_in_schema=False)
