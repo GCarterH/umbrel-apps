@@ -10,7 +10,7 @@ from .config import HOME_TZ
 from .ingest import Reject
 
 MEALS = {'breakfast', 'lunch', 'dinner', 'snack'}
-SOURCES = {'openfoodfacts', 'cofid', 'photo', 'label', 'quick'}
+SOURCES = {'openfoodfacts', 'cofid', 'photo', 'label', 'quick', 'recipe'}   # recipe (0.3.2): one portion of a recipe; recipe_id and portions go in extra
 REAL = ['serving_g', 'kcal', 'protein_g', 'carbs_g', 'fat_g', 'sat_fat_g', 'sugar_g', 'fibre_g', 'salt_g']
 TEXT = ['meal', 'name', 'brand', 'barcode', 'source']
 KNOWN = {'id', 'logged_at', 'time_zone'} | set(REAL) | set(TEXT)
@@ -49,7 +49,7 @@ def _row(f):
     if row['meal'] is not None and row['meal'] not in MEALS:
         raise Reject('meal must be breakfast, lunch, dinner or snack')
     if row['source'] is not None and row['source'] not in SOURCES:
-        raise Reject('source must be openfoodfacts, cofid, photo, label or quick')
+        raise Reject('source must be openfoodfacts, cofid, photo, label, quick or recipe')
     for k in REAL:
         row[k] = _number(f, k)
     if row['kcal'] is None:
