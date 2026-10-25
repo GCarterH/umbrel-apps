@@ -2,7 +2,7 @@ manifestVersion: 1
 id: george-health-sync
 category: files
 name: Health Sync
-version: "0.3.0"
+version: "0.3.1"
 tagline: Keep your Apple Health data on your Umbrel
 description: >-
   Receives Apple Health records from the Health Sync iPhone app and stores them in a SQLite
@@ -23,4 +23,4 @@ defaultUsername: ""
 defaultPassword: ""
 submitter: George Hay
 submission: ""
-releaseNotes: "A new look that matches the iPhone app: a written headline for each chapter, rings and capsule bars, cleaner lists, and the new blue app icon."
+releaseNotes: "Training sessions keep how each exercise felt (easy, about right or hard), and the weekly check-in says how many felt hard."
