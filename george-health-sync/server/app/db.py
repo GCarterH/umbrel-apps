@@ -202,7 +202,8 @@ CREATE TABLE IF NOT EXISTS training_sets (
     weight_kg REAL,
     reps INTEGER NOT NULL,
     rir REAL,
-    done_at TEXT
+    done_at TEXT,
+    effort TEXT
 );
 CREATE INDEX IF NOT EXISTS training_sets_session ON training_sets (session_id, ex_order, set_order);
 CREATE INDEX IF NOT EXISTS training_sets_exercise ON training_sets (exercise_id);
@@ -353,9 +354,17 @@ def migrate(path=None):
              time.monotonic() - t2)
 
 
+# Columns added to existing tables after they were first created: (table, column, type). CREATE TABLE IF NOT EXISTS
+# doesn't add them to a database made by an older version, so init() does.
+ADDED_COLUMNS = [('training_sets', 'effort', 'TEXT')]   # 0.3.1: how an exercise felt (easy/right/hard)
+
+
 def init(path=None):
     con = connect(path)
     con.executescript(SCHEMA)
+    for table, col, typ in ADDED_COLUMNS:
+        if col not in [r[1] for r in con.execute(f'PRAGMA table_info({table})')]:
+            con.execute(f'ALTER TABLE {table} ADD COLUMN {col} {typ}')
     if get_meta(con, 'stats_version') is None:
         with con:
             build_stats(con)

@@ -231,6 +231,10 @@ def _training_line(con, ws, we):
         best = [f'{p["exercise"]} {p["weight_kg"]:g} kg × {p["reps"]}' for p in w['prs'][:3]]
         more = len(w['prs']) - len(best)
         text += f' New best{"s" if len(w["prs"]) > 1 else ""} (estimated one-rep max): ' + ', '.join(best) + (f' and {more} more' if more > 0 else '') + '.'
+    e = w['effort']
+    if e['rated']:
+        parts = [f'{e[k]} {label}' for k, label in (('hard', 'hard'), ('right', 'about right'), ('easy', 'easy')) if e[k]]
+        text += f' Of the {e["rated"]} exercise{"s" if e["rated"] != 1 else ""} you rated, ' + ', '.join(parts[:-1]) + (' and ' if len(parts) > 1 else '') + parts[-1] + '.'
     return dict(kind='training', text=text, tone='good' if w['prs'] else 'neutral')
 
 

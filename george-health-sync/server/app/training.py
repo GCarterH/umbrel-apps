@@ -12,10 +12,11 @@ from .config import HOME_TZ
 from .ingest import Reject
 
 KINDS = {'warmup', 'working', 'drop', 'failure'}
+EFFORTS = {'easy', 'right', 'hard'}   # how the exercise felt, asked after each one
 PR_KINDS = ('working', 'failure')
 SESSION_KNOWN = {'id', 'started', 'ended', 'time_zone', 'name', 'plan_day', 'hk_workout_uuid', 'notes', 'exercises'}
 SESSION_COLS = ['id', 'started', 'ended', 'time_zone', 'name', 'plan_day', 'hk_workout_uuid', 'notes', 'extra_json']
-SET_COLS = ['session_id', 'ex_order', 'exercise_id', 'exercise_name', 'set_order', 'kind', 'weight_kg', 'reps', 'rir', 'done_at']
+SET_COLS = ['session_id', 'ex_order', 'exercise_id', 'exercise_name', 'set_order', 'kind', 'weight_kg', 'reps', 'rir', 'done_at', 'effort']
 FIELDS = ['id', 'started', 'ended', 'local', 'time_zone', 'name', 'plan_day', 'hk_workout_uuid', 'notes', 'exercises', 'extra',
           'received_at', 'updated_at']
 
@@ -75,6 +76,9 @@ def _parse(s):
         if not eid and not ename:
             raise Reject(f'exercise {i}: needs exercise_id or name')
         eo = _num(e, 'order', whole=True)
+        effort = e.get('effort')
+        if effort is not None and effort not in EFFORTS:
+            raise Reject(f'exercise {i}: effort must be easy, right, hard or null')
         ss = e.get('sets') or []
         if not isinstance(ss, list):
             raise Reject(f'exercise {i}: sets must be a list')
@@ -89,7 +93,7 @@ def _parse(s):
                 sets.append(dict(session_id=row['id'], ex_order=i if eo is None else eo, exercise_id=eid, exercise_name=ename,
                                  set_order=j if so is None else so, kind=kind, weight_kg=_num(st, 'weight_kg'),
                                  reps=_num(st, 'reps', whole=True, required=True), rir=_num(st, 'rir', top=10),
-                                 done_at=_time(st, 'done_at', False)))
+                                 done_at=_time(st, 'done_at', False), effort=effort))
             except Reject as e2:
                 raise Reject(f'exercise {i} set {j}: {e2}')
     extra = {k: v for k, v in s.items() if k not in SESSION_KNOWN}
@@ -130,7 +134,7 @@ def _exercises(con, sid):
     out, cur = [], None
     for r in con.execute('SELECT * FROM training_sets WHERE session_id = ? ORDER BY ex_order, set_order', (sid,)):
         if cur is None or cur['order'] != r['ex_order']:
-            cur = dict(exercise_id=r['exercise_id'], name=r['exercise_name'], order=r['ex_order'], sets=[])
+            cur = dict(exercise_id=r['exercise_id'], name=r['exercise_name'], order=r['ex_order'], effort=r['effort'], sets=[])
             out.append(cur)
         cur['sets'].append(dict(order=r['set_order'], kind=r['kind'], weight_kg=r['weight_kg'], reps=r['reps'], rir=r['rir'],
                                 done_at=r['done_at']))
@@ -188,4 +192,11 @@ def week_summary(con, start_utc, end_utc):
             prs.append(dict(exercise=x['exercise_name'] or x['exercise_id'], weight_kg=x['weight_kg'], reps=x['reps'],
                             e1rm=round(v, 1), previous_e1rm=round(before, 1)))
     prs.sort(key=lambda p: -(p['e1rm'] - p['previous_e1rm']))
-    return dict(sessions=len(sessions), working_sets=len(work), volume_kg=round(volume), prs=prs)
+    # how the exercises felt: one rating per exercise (stored on each of its sets)
+    felt = {}
+    for x in sets:
+        if x['effort']:
+            felt[(x['session_id'], x['ex_order'])] = x['effort']
+    effort = dict(rated=len(felt), easy=sum(v == 'easy' for v in felt.values()), right=sum(v == 'right' for v in felt.values()),
+                  hard=sum(v == 'hard' for v in felt.values()))
+    return dict(sessions=len(sessions), working_sets=len(work), volume_kg=round(volume), prs=prs, effort=effort)
