@@ -8,7 +8,7 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, StreamingResponse
 
-from . import __version__, body, config, daily as D, dailycache, dayview, db, documents, doses, food, insights, training, idindex, ingest, spool, timeutil as T, weighins
+from . import __version__, body, config, daily as D, dailycache, dayview, db, documents, doses, food, insights, rhythm, training, whoop, idindex, ingest, spool, timeutil as T, weighins
 
 log = logging.getLogger('healthsync')
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(message)s')
@@ -373,12 +373,60 @@ async def delete_training(session_id: str, request: Request):
     return dict(deleted=session_id)
 
 
+@app.post('/api/v1/whoop/daily')
+async def post_whoop_daily(request: Request):
+    """WHOOP strap days from the app: {"days": [{day, time_zone, illness_warning, sleep_start, sleep_end, asleep_min,
+    in_bed_min, deep_min, rem_min, light_min, sleep_estimated, nap_min, resting_hr, hrv_rmssd_ms, hrv_sdnn_ms,
+    breathing_rate, strain_level, strain_because, strain_load, high_hr_min, lift_sets, illness_signs}]}, gzip or
+    plain. Upserted by day: a resend replaces it. Reply {accepted (new), updated, rejected: [{day, reason}]}."""
+    auth(request)
+    raw = await request.body()
+    enc = request.headers.get('content-encoding', '').lower().strip()
+
+    def work():
+        b = _have_body(raw, enc)
+        items = b.get('days') if isinstance(b, dict) else None
+        if not isinstance(items, list):
+            raise spool.BadBody(400, 'expected {"days": [...]}')
+        if len(items) > 5000:
+            raise spool.BadBody(413, 'at most 5,000 days per request')
+        with db.write_lock:
+            con = db.writer()
+            with con:
+                return whoop.store(con, items)
+    try:
+        res = await run_in_threadpool(work)
+    except spool.BadBody as e:
+        raise HTTPException(e.status, str(e))
+    log.info('POST whoop/daily: %d new, %d updated, %d rejected', res['accepted'], res['updated'], len(res['rejected']))
+    return res
+
+
+@app.get('/api/v1/whoop/daily')
+def get_whoop_daily(request: Request, from_: str = Query(None, alias='from'), to: str = None):
+    """WHOOP strap days, newest first. from/to are local dates (the day woken on), both optional."""
+    auth(request)
+    f = _date(from_, 'from') if from_ else None
+    t = _date(to, 'to') if to else None
+    return dict(fields=whoop.FIELDS, days=whoop.rows(db.reader(), f, t))
+
+
 @app.get('/api/v1/baselines')
 def get_baselines(request: Request):
-    """Your usual range for each daily measure (mean ± 1.5 sd of days 8–97 back, at least 30 days with data), the
-    last 7 days' mean, whether that's normal, high or low, and how many recent days in a row were outside the range."""
+    """Your usual range for each daily measure (median ± 1.5 robust sd of days 8–97 back, at least 30 days with data),
+    the last 7 days' mean, whether that's normal, high or low, how many recent days in a row were outside the range,
+    and when it stepped to a new level, if it did (shift)."""
     auth(request)
     return insights.baselines(db.reader())
+
+
+@app.get('/api/v1/rhythm')
+def get_rhythm(request: Request, week: str = None):
+    """Sleep regularity, the heart-rate daily rhythm and social jet lag (rhythm.py) for the week starting on (or
+    containing) `week`, default the last complete week, with your usual from the weeks before."""
+    auth(request)
+    ws, we = insights.week_bounds(dt.date.fromisoformat(_date(week, 'week')) if week else None)
+    return rhythm.week(db.reader(), ws, we)
 
 
 @app.get('/api/v1/checkin')
@@ -499,6 +547,7 @@ EXPORT_TABLES = {   # type name -> (table, time column)
     'food_log': ('food_log', 'logged_at'),
     'doses': ('doses', 'taken_at'),
     'training': ('training_sessions', 'started'),
+    'whoop': ('whoop_days', 'day'),
 }
 
 
@@ -525,7 +574,7 @@ def get_day(request: Request, date: str):
 @app.get('/api/v1/export')
 def get_export(request: Request, from_: str = Query(None, alias='from'), to: str = None, types: str = None,
                include_deleted: bool = False):
-    """Raw records as JSON: {"samples": [...], "sleep": [...], "workouts": [...], "ecgs": [...], "weighins": [...], "food_log": [...], "doses": [...], "training": [...]}.
+    """Raw records as JSON: {"samples": [...], "sleep": [...], "workouts": [...], "ecgs": [...], "weighins": [...], "food_log": [...], "doses": [...], "training": [...], "whoop": [...]}.
     from/to are UTC dates (to inclusive) or ISO times (to exclusive). types = comma-separated HealthKit identifiers."""
     auth(request)
     lo, hi = _bound(from_, 'from'), _bound(to, 'to', end=True)
@@ -534,7 +583,8 @@ def get_export(request: Request, from_: str = Query(None, alias='from'), to: str
     parts = [('samples', 'samples', 'start_utc', sample_types)]
     for name, key in (('HKCategoryTypeIdentifierSleepAnalysis', 'sleep'), ('HKWorkoutTypeIdentifier', 'workouts'),
                       ('HKDataTypeIdentifierElectrocardiogram', 'ecgs'), ('weighins', 'weighins'),
-                      ('food_log', 'food_log'), ('doses', 'doses'), ('training', 'training')):
+                      ('food_log', 'food_log'), ('doses', 'doses'), ('training', 'training'),
+                      ('whoop', 'whoop')):
         if not want or name in want:
             parts.append((key, *EXPORT_TABLES[name], None))
     if want and not sample_types:
@@ -546,9 +596,10 @@ def get_export(request: Request, from_: str = Query(None, alias='from'), to: str
             yield '{"from":%s,"to":%s' % (json.dumps(lo), json.dumps(hi))
             for key, table, col, tlist in parts:
                 where, args = [], []
-                if lo: where.append(f'{col} >= ?'); args.append(lo)
-                if hi: where.append(f'{col} < ?'); args.append(hi)
-                if not include_deleted: where.append('deleted_at IS NULL')
+                cut = (lambda v: v[:10]) if table == 'whoop_days' else (lambda v: v)   # whoop rows are keyed by local date
+                if lo: where.append(f'{col} >= ?'); args.append(cut(lo))
+                if hi: where.append(f'{col} < ?'); args.append(cut(hi))
+                if not include_deleted and table != 'whoop_days': where.append('deleted_at IS NULL')
                 if tlist: where.append('type IN (%s)' % ','.join('?' * len(tlist))); args += tlist
                 sql = f'SELECT * FROM {table}' + (' WHERE ' + ' AND '.join(where) if where else '') + f' ORDER BY {col}'
                 yield ',"%s":[' % key

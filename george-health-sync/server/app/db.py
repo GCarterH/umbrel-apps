@@ -208,6 +208,36 @@ CREATE TABLE IF NOT EXISTS training_sets (
 CREATE INDEX IF NOT EXISTS training_sets_session ON training_sets (session_id, ex_order, set_order);
 CREATE INDEX IF NOT EXISTS training_sets_exercise ON training_sets (exercise_id);
 
+-- WHOOP strap days from the Health Sync app (POST /api/v1/whoop/daily, whoop.py): one row per local day woken on,
+-- replaced when the same day is sent again. Plain figures; no scores.
+CREATE TABLE IF NOT EXISTS whoop_days (
+    day TEXT PRIMARY KEY,
+    time_zone TEXT NOT NULL,
+    sleep_start TEXT,
+    sleep_end TEXT,
+    asleep_min REAL,
+    in_bed_min REAL,
+    deep_min REAL,
+    rem_min REAL,
+    light_min REAL,
+    nap_min REAL,
+    sleep_estimated INTEGER,
+    resting_hr INTEGER,
+    hrv_rmssd_ms REAL,
+    hrv_sdnn_ms REAL,
+    breathing_rate REAL,
+    strain_level TEXT,
+    strain_because TEXT,
+    strain_load REAL,
+    high_hr_min INTEGER,
+    lift_sets INTEGER,
+    illness_warning INTEGER NOT NULL,
+    illness_signs_json TEXT,
+    extra_json TEXT,
+    received_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
 -- Reports and results kept with the health data (documents.py), e.g. the pharmacogenomic report. Never expire.
 -- The file itself is in data/documents/<file_sha256><ext>.
 CREATE TABLE IF NOT EXISTS documents (

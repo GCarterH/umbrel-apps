@@ -1,13 +1,15 @@
 """Personal baselines (GET /api/v1/baselines) and the weekly check-in (GET /api/v1/checkin), worked out from the
 daily summary, weigh-ins, the food target and the dose log. Plain numbers and plain sentences only, no scores.
 
-Baselines: for each daily measure, your usual range is the mean ± 1.5 standard deviations of the days 8 to 97
-before today (at least 30 days with data); "recent" is the mean of the last 7 days (yesterday and the 6 before;
-today is only part of a day). A measure is "high" or "low" when recent is outside the range, and days_out counts the
-most recent days with data in a row that were outside it.
+Baselines: for each daily measure, your usual range is the median ± 1.5 robust standard deviations (1.4826 × the
+median absolute deviation) of the days 8 to 97 before today (at least 30 days with data). Unlike mean ± SD, a week of
+illness or a broken strap can't drag the middle or widen the band. "Recent" is the mean of the last 7 days (yesterday
+and the 6 before; today is only part of a day). A measure is "high" or "low" when recent is outside the range, and
+days_out counts the most recent days with data in a row that were outside it. "shift" is when the measure stepped to
+a new level, if it did (changepoint.py), from the last SHIFT_DAYS days.
 """
 import datetime as dt, statistics
-from . import body, dailycache, doses as DOSES, food, timeutil as T, training
+from . import body, changepoint, dailycache, doses as DOSES, food, rhythm, timeutil as T, training
 from .config import HOME_TZ
 
 # key, daily column, name, unit, which way is good, decimals
@@ -25,6 +27,9 @@ METRICS = [
     ('calories_in', 'Calories in', 'Calories in', 'kcal', None, 0),
 ]
 RECENT_DAYS, BASE_FROM, BASE_TO, MIN_BASE_DAYS, SPREAD = 7, 8, 97, 30, 1.5
+SHIFT_DAYS = 120         # how far back the changepoint search looks
+SHIFT_SKIP = ('weight',)  # weight moves on a slope, not in steps; the weight line covers it
+SHIFT_RECENT = 21        # the check-in mentions a new level that began within this many days of the week's end
 PACE_PCT = 0.5          # a steady weight-loss pace, % of body weight a week, unless the phone sends its own
 PACE_KEYS = ('weekly_loss_pct', 'pace_pct_per_week')   # read from the food target's extra fields
 LEAN_SHARE = 0.25       # flag when lean mass is more than this share of the weight lost
@@ -45,7 +50,7 @@ def _rnd(v, nd):
 def baselines(con, as_of=None):
     """{as_of, metrics: [...]} with every measure that has a baseline (see the module docstring)."""
     as_of = as_of or today()
-    rows = dailycache.rows(con, _iso(as_of - dt.timedelta(days=BASE_TO)), _iso(as_of - dt.timedelta(days=1)))
+    rows = dailycache.rows(con, _iso(as_of - dt.timedelta(days=SHIFT_DAYS)), _iso(as_of - dt.timedelta(days=1)))
     by_date = {r['Date']: r for r in rows}
     recent_from = _iso(as_of - dt.timedelta(days=RECENT_DAYS))
     base_from, base_to = _iso(as_of - dt.timedelta(days=BASE_TO)), _iso(as_of - dt.timedelta(days=BASE_FROM))
@@ -54,8 +59,8 @@ def baselines(con, as_of=None):
         base = [r[col] for d, r in by_date.items() if base_from <= d <= base_to and r.get(col) is not None]
         if len(base) < MIN_BASE_DAYS:
             continue
-        mean, sd = statistics.mean(base), statistics.stdev(base)
-        low, high = mean - SPREAD * sd, mean + SPREAD * sd
+        mid, sd = statistics.median(base), changepoint.robust_sd(base)
+        low, high = mid - SPREAD * sd, mid + SPREAD * sd
         rec = [r[col] for d, r in by_date.items() if d >= recent_from and r.get(col) is not None]
         recent = statistics.mean(rec) if rec else None
         status = None if recent is None else 'high' if recent > high else 'low' if recent < low else 'normal'
@@ -67,9 +72,17 @@ def baselines(con, as_of=None):
             if low <= v <= high:
                 break
             days_out += 1
+        shift = None
+        if key not in SHIFT_SKIP:
+            series = sorted((d, r[col]) for d, r in by_date.items() if r.get(col) is not None)
+            sh = changepoint.recent_shift([d for d, _ in series], [v for _, v in series])
+            if sh:
+                shift = dict(start=sh['start'], days=sh['days'], before=_rnd(sh['before'], nd), after=_rnd(sh['after'], nd),
+                             confidence=sh['confidence'])
+        # baseline_mean is the middle of the range (the median); the name is kept for the iPhone app.
         out.append(dict(key=key, name=name, unit=unit, recent=_rnd(recent, nd), recent_days=len(rec),
-                        baseline_mean=_rnd(mean, nd), baseline_sd=_rnd(sd, max(nd, 1)), low=_rnd(low, nd), high=_rnd(high, nd),
-                        baseline_days=len(base), status=status, days_out=days_out, direction_good=good))
+                        baseline_mean=_rnd(mid, nd), baseline_sd=_rnd(sd, max(nd, 1)), low=_rnd(low, nd), high=_rnd(high, nd),
+                        baseline_days=len(base), status=status, days_out=days_out, direction_good=good, shift=shift))
     return dict(as_of=_iso(as_of), metrics=out)
 
 
@@ -190,13 +203,41 @@ def _sleep_line(rows, base):
     return dict(kind='sleep', text=text + '.', tone=tone)
 
 
-def _baseline_lines(base):
+def _unit(m):
+    return '' if m['unit'] in ('steps',) else (m['unit'] if m['unit'] == '%' else ' ' + m['unit'])
+
+
+def _shift_keys(base, we):
+    """Measures whose new level began within SHIFT_RECENT days of the week's end."""
+    first = _iso(we - dt.timedelta(days=SHIFT_RECENT - 1))
+    return {m['key'] for m in base['metrics'] if m.get('shift') and first <= m['shift']['start'] <= _iso(we)}
+
+
+def _shift_lines(base, we):
+    out, keys = [], _shift_keys(base, we)
+    for m in base['metrics']:
+        if m['key'] not in keys:
+            continue
+        sh = m['shift']
+        up = sh['after'] > sh['before']
+        v = (lambda x: _hm(x)) if m['key'] == 'sleep' else (lambda x: f'{x:,}{_unit(m)}')
+        day = _fmt_day(dt.date.fromisoformat(sh['start']))
+        text = (f'{m["name"]} stepped {"up" if up else "down"} from about {v(sh["before"])} to {v(sh["after"])} '
+                f'around {day}, and has stayed there since.')
+        good = m['direction_good']
+        tone = 'neutral' if good is None else 'good' if (good == 'up') == up else 'watch'
+        out.append(dict(kind='shift', text=text, tone=tone))
+    return out
+
+
+def _baseline_lines(base, skip=()):
     out = []
     for m in base['metrics']:
-        if m['key'] in ('sleep', 'weight', 'calories_in') or m['days_out'] < 3 or m['status'] in (None, 'normal'):
+        if (m['key'] in ('sleep', 'weight', 'calories_in') or m['key'] in skip or m['days_out'] < 3
+                or m['status'] in (None, 'normal')):
             continue
         side = 'above' if m['status'] == 'high' else 'below'
-        unit = '' if m['unit'] in ('steps',) else (m['unit'] if m['unit'] == '%' else ' ' + m['unit'])
+        unit = _unit(m)
         rng = f'{m["low"]:,}–{m["high"]:,}{unit}'
         text = f'{m["name"]} has been {side} your usual range ({rng}) for {m["days_out"]} days; this week averaged {m["recent"]:,}{unit}.'
         good = m['direction_good']
@@ -253,8 +294,10 @@ def checkin(con, week=None):
     rows = dailycache.rows(con, _iso(ws), _iso(we))
     target = food.target(con)
     base = baselines(con, we + dt.timedelta(days=1))   # "recent" is then exactly this week
-    lines = [_weight_line(con, ws, we, target), _body_line(con, we), _food_line(rows, target), _sleep_line(rows, base)]
-    lines += _baseline_lines(base)
+    lines = [_weight_line(con, ws, we, target), _body_line(con, we), _food_line(rows, target), _sleep_line(rows, base),
+             rhythm.checkin_line(con, ws, we)]
+    lines += _shift_lines(base, we)
+    lines += _baseline_lines(base, skip=_shift_keys(base, we))   # a new level says more than "outside the range"
     lines.append(_training_line(con, ws, we))
     lines.append(_dose_line(con, ws, we))
     return dict(week_start=_iso(ws), week_end=_iso(we), generated_at=T.now(), lines=[l for l in lines if l])

@@ -39,7 +39,19 @@
 * { box-sizing: border-box; }
 body { margin: 0; background: var(--page); color: var(--text); font: 17px/1.4 -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
   font-variant-numeric: tabular-nums; -webkit-font-smoothing: antialiased; }
-main { max-width: 768px; margin: 0 auto; padding: 18px 24px 56px; }
+main { max-width: 1400px; margin: 0 auto; padding: 18px 32px 56px; }   /* uses the window; grids add columns as it widens */
+/* wide windows: related chapters side by side */
+.pair { display: grid; grid-template-columns: 1fr; column-gap: 12px; }
+.pair > section { min-width: 0; }
+@media (min-width: 1100px) {
+  .pair { grid-template-columns: 1fr 1fr; align-items: start; }
+  .pair:has(> section[hidden]) { grid-template-columns: 1fr; }   /* one of the two has no data: the other takes the width */
+  #food-sec:not(.tab-off) { display: grid; grid-template-columns: 1fr 1fr; column-gap: 12px; align-items: stretch; }
+  #food-sec > .box { display: flex; align-items: center; }
+  #food-sec > .box > .dials { flex: 1; }
+  #food-sec > .chart-head, #food-sec > .lead { grid-column: 1 / -1; }
+  #food-sec > .ledger { margin-top: 0 !important; }
+}
 a, .linkbtn { color: var(--accent); font-weight: 600; text-decoration: none; }
 b { font-weight: 600; }
 
@@ -49,13 +61,13 @@ header img { width: 28px; height: 28px; border-radius: 7px; }
 header .brand { font-size: 15px; font-weight: 600; color: var(--muted); }
 header .spacer { flex: 1; }
 .connect { font-size: 15px; }
-.tabs { display: flex; align-items: baseline; gap: 18px; overflow-x: auto; scrollbar-width: none; margin: 18px -24px 0; padding: 0 24px 2px; }
+.tabs { display: flex; align-items: baseline; gap: 18px; overflow-x: auto; scrollbar-width: none; margin: 18px -32px 0; padding: 0 32px 2px; }
 .tabs::-webkit-scrollbar { display: none; }
 .tabs button { font: inherit; font-size: 19px; font-weight: 600; color: var(--muted); background: none; border: 0; padding: 0 0 6px;
   cursor: pointer; white-space: nowrap; border-bottom: 1px solid transparent; }
 .tabs button[aria-selected="true"] { font-size: 30px; font-weight: 700; color: var(--text); border-bottom-color: var(--accent); }
 .tab-off { display: none !important; }
-.headline { font-size: 30px; line-height: 1.2; font-weight: 700; margin: 22px 0 8px; letter-spacing: -.01em; min-height: 36px; }
+.headline { font-size: 30px; line-height: 1.2; font-weight: 700; margin: 22px 0 8px; letter-spacing: -.01em; min-height: 36px; max-width: 34em; }
 .syncline { display: flex; align-items: center; gap: 7px; font-size: 13px; color: var(--muted); }
 .syncline i { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); display: inline-block; }
 .syncline.busy i { background: var(--warn); }
@@ -132,6 +144,9 @@ section .two { margin-top: 0; }
 .ledger .val { font-size: 19px; font-weight: 600; white-space: nowrap; }
 .ledger .chev { color: var(--muted); font-size: 17px; margin-left: -4px; }
 .ledger .more { color: var(--muted); font-size: 13px; padding: 12px 0; border-top: 1px solid var(--hairline); }
+.box .ledger { background: none; border-radius: 0; padding: 0; margin-top: 14px; border-top: 1px solid var(--hairline); }   /* a list inside a card */
+.box .ledger:empty { display: none; }
+#body-pick { margin: 0 0 12px !important; }
 
 /* charts */
 .chart { position: relative; width: 100%; }
@@ -276,14 +291,13 @@ footer { color: var(--muted); font-size: 12px; margin-top: 34px; }
     </div>
   </section>
 
+  <div class="pair">
   <section id="body-sec" data-tab="body">
     <h2>Body composition</h2>
     <p class="lead" id="body-lead"></p>
-    <div class="two" style="gap:24px">
-      <div><div class="legend"><span><i style="background:var(--s1)"></i>Weight (kg)</span></div><div class="chart" id="body-w"></div></div>
-      <div><div class="ranges" role="group" aria-label="Measurement" id="body-pick" style="margin:0 0 6px"></div><div class="chart" id="body-f"></div></div>
-    </div>
-    <div class="ledger" id="body-table" style="margin:12px -20px -2px; padding-top:0"></div>
+    <div class="ranges" role="group" aria-label="Measurement" id="body-pick"></div>
+    <div class="chart" id="body-f"></div>
+    <div class="ledger" id="body-table"></div>
   </section>
 
   <section id="bp-sec" data-tab="body">
@@ -291,8 +305,9 @@ footer { color: var(--muted); font-size: 12px; margin-top: 34px; }
     <p class="lead" id="bp-lead"></p>
     <div class="legend"><span><i style="background:var(--s1)"></i>Systolic</span><span><i style="background:var(--s2)"></i>Diastolic</span></div>
     <div class="chart" id="bp"></div>
-    <div class="ledger" id="bp-table" style="margin:12px -20px -2px; padding-top:0"></div>
+    <div class="ledger" id="bp-table"></div>
   </section>
+  </div>
 
   <section id="food-sec" class="plain" data-tab="food">
     <h2>Averages</h2>
@@ -322,7 +337,7 @@ footer { color: var(--muted); font-size: 12px; margin-top: 34px; }
 <script>
 'use strict';
 // ------------------------------------------------------------ data
-let ROWS = [], META = {}, RANGE = '90', METRIC = 'steps', BODY = [], BODY_PICK = 'fat_pct', FOOD = [];
+let ROWS = [], META = {}, RANGE = '90', METRIC = 'steps', BODY = [], BODY_PICK = 'weight_kg', FOOD = [];
 const $ = id => document.getElementById(id);
 const MS_DAY = 86400000;
 const toDate = s => { const [y, m, d] = s.split('-').map(Number); return new Date(y, m - 1, d); };
@@ -360,7 +375,7 @@ const METRICS = [
     say: d => `${int(Math.abs(d))} ms ${d > 0 ? 'higher' : 'lower'}` },
   { k: 'vo2', tip: 'ml/kg/min', name: 'VO₂ max', col: 'VO2 max', unit: 'ml/kg/min', show: one, same: 0.5,
     say: d => `${one(Math.abs(d))} ${d > 0 ? 'higher' : 'lower'}` },
-  { k: 'weight', tip: 'kg', name: 'Weight', col: 'Weight (kg)', unit: 'kg', show: v => two(v), same: 0.3, sparse: true,
+  { k: 'weight', tip: 'kg', name: 'Weight', col: 'Weight (kg)', unit: 'kg', show: v => two(v), axis: one, same: 0.3, sparse: true,
     say: d => `${two(Math.abs(d))} kg ${d > 0 ? 'heavier' : 'lighter'}` },
   { k: 'fat', tip: '%', name: 'Body fat', col: 'Body fat %', unit: '%', show: one, same: 0.3, sparse: true,
     say: d => `${one(Math.abs(d))} points ${d > 0 ? 'higher' : 'lower'}` },
@@ -587,6 +602,18 @@ function rolling(rows, col, window) {
   }
   return out;
 }
+/** The x-range for occasional readings (weigh-ins, blood pressure): around the readings themselves when they cover
+ *  under half of [a, b], padded, at least 14 days. Otherwise [a, b] as given. */
+function readingSpan(dates, a, b) {
+  if (dates.length < 2) return [a, b];
+  let lo = dates[0], hi = dates[dates.length - 1];
+  const span = (hi - lo) / MS_DAY, whole = (b - a) / MS_DAY;
+  if (span >= whole * 0.5) return [a, b];
+  const pad = Math.max(2, Math.round(span * 0.08));
+  lo = addDays(lo, -pad); hi = addDays(hi, pad);
+  if ((hi - lo) / MS_DAY < 14) lo = addDays(hi, -14);
+  return [lo, hi];
+}
 const sizeFor = P => { const days = (P.end - P.start) / MS_DAY; return days > 800 ? 'month' : days > 120 ? 'week' : 'day'; };
 const sizeWord = { day: 'day', week: 'week', month: 'month' };
 
@@ -635,7 +662,7 @@ const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;',
 /** Daylight Ledger rows: [{title, detail, value, unit, open|day (tappable: a chevron)}], with hairlines between them. */
 const ledgerRows = rows => rows.map((r, i) => `<div class="row${r.open || r.day ? ' tap' : ''}" data-i="${i}"><div class="main"><div class="title">${esc(r.title)}</div>` +
   (r.detail ? `<div class="detail">${esc(r.detail)}</div>` : '') + (r.html || '') + '</div>' +
-  (r.value !== undefined && r.value !== null ? `<div class="val">${esc(r.value)}${r.unit ? `<small>${esc(r.unit)}</small>` : ''}</div>` : '') +
+  (r.value !== undefined && r.value !== null ? `<div class="val"${r.warn ? ' style="color:var(--warn)"' : ''}>${esc(r.value)}${r.unit ? `<small>${esc(r.unit)}</small>` : ''}</div>` : '') +
   (r.open || r.day ? '<div class="chev">›</div>' : '') + '</div>').join('');
 /** A Daylight dial: a 9-wide ring from 12 o'clock, accent on a hairline track; orange when warn() and over 105%. */
 function ring(frac, over) {
@@ -703,10 +730,16 @@ function renderDetail(P) {
     series.push({ points: pts, kind: 'line', color: css('--s1'), mid: 0, maxGap: (size === 'month' ? 70 : 20) * MS_DAY, markers: pts.length < 60 });
     lead = `Each point is the average for a ${sizeWord[size]}.`;
   }
-  $('detail-lead').textContent = lead;
   const byDate = new Map(rows.map(r => [r.Date, r]));
   const bucketed = size === 'day' || m.col2 ? null : bucket(rows, m.col, size);
-  timeChart($('detail'), { series, a: P.start, b: P.end, yFmt: fmt, tickStep: m.tickStep, onPick: bucketed || m.sparse ? null : goDay, hover: d => {
+  // occasional readings (weight, body fat, blood pressure): draw around the readings, not the whole period
+  let [a, b] = [P.start, P.end];
+  if (m.sparse && !bucketed) {
+    [a, b] = readingSpan(rows.filter(r => r[m.col] !== null && r[m.col] !== undefined).map(r => r._d), P.start, P.end);
+    if (a > P.start) lead += ` Showing ${fmtShort(a)} to ${fmtShort(b)}, around your readings.`;
+  }
+  $('detail-lead').textContent = lead;
+  timeChart($('detail'), { series, a, b, yFmt: fmt, tickStep: m.tickStep, onPick: bucketed || m.sparse ? null : goDay, hover: d => {
     if (bucketed) {
       const keyT = size === 'month' ? new Date(d.getFullYear(), d.getMonth(), 1).getTime() : addDays(d, -((d.getDay() + 6) % 7)).getTime();
       const p = bucketed.find(x => x.d.getTime() === keyT); if (!p || p.v === null) return null;
@@ -800,7 +833,7 @@ function renderBP(P) {
   const show = rows.length ? rows : all.slice(-30);
   $('bp-lead').textContent = rows.length ? `${rows.length} reading${rows.length > 1 ? 's' : ''} in this period, averaging ${int(mean(vals(rows, 'Systolic BP')))}/${int(mean(vals(rows, 'Diastolic BP')))} mmHg.`
     : `No readings in this period; showing your latest ${show.length}.`;
-  const a = rows.length ? P.start : show[0]._d, b = rows.length ? P.end : show[show.length - 1]._d;
+  const [a, b] = readingSpan(show.map(r => r._d), rows.length ? P.start : show[0]._d, rows.length ? P.end : show[show.length - 1]._d);
   timeChart($('bp'), { series: [
       { points: show.map(r => ({ d: r._d, v: r['Systolic BP'] })), kind: 'line', color: css('--s1'), markers: true, maxGap: 60 * MS_DAY },
       { points: show.map(r => ({ d: r._d, v: r['Diastolic BP'] })), kind: 'line', color: css('--s2'), markers: true, maxGap: 60 * MS_DAY }],
@@ -818,7 +851,7 @@ const BODY_COLS = [['weight_kg', 'Weight', 'kg', two], ['fat_pct', 'Body fat', '
 // ------------------------------------------------------------ weekly check-in
 // Plain sentences from the server (/dashboard/checkin), one card each, all the same size. Default: last complete week.
 let CK_WEEK = null, CK = null;
-const CK_KIND = { weight: 'Weight', body: 'Body composition', food: 'Food', sleep: 'Sleep', baseline: 'Outside your usual range', training: 'Training', doses: 'Doses' };
+const CK_KIND = { weight: 'Weight', body: 'Body composition', food: 'Food', sleep: 'Sleep', rhythm: 'Daily rhythm', shift: 'A new level', baseline: 'Outside your usual range', training: 'Training', doses: 'Doses' };
 async function loadCheckin(week) {
   try {
     const r = await fetch('/dashboard/checkin' + (week ? '?week=' + week : ''), { cache: 'no-store' });
@@ -835,7 +868,7 @@ function renderCheckin() {
   $('ck-next').disabled = CK.week_start >= latest;
   $('checkin').innerHTML = CK.lines.map(l => `<div class="ckcard"><div class="head">${esc(CK_KIND[l.kind] || cap(l.kind))}` +
     (l.tone === 'good' ? '<span class="tone good">Going well</span>' : l.tone === 'watch' ? '<span class="tone watch">Worth a look</span>' : '') +
-    `</div><div>${esc(cap(l.text.replace(/^(Food|Sleep|Training|Doses?): /, '')))}</div></div>`).join('');   // the card's heading already says it
+    `</div><div>${esc(cap(l.text.replace(/^(Food|Sleep|Rhythm|Training|Doses?): /, '')))}</div></div>`).join('');   // the card's heading already says it
 }
 
 // ------------------------------------------------------------ food
@@ -924,14 +957,9 @@ function renderBody(P) {
     if (ch.length) lead += ` Since ${fmtShort(first._d)} (${ws.length} weigh-ins): ${ch.join(', ')}.`;
   } else if (!inRange) lead += ' No weigh-ins in this period; showing your latest ones.';
   $('body-lead').textContent = lead;
-  const a = inRange ? P.start : ws[0]._d, b = inRange ? end : ws[ws.length - 1]._d;
-  const nearestW = (d, k) => nearest(ws.filter(w => w[k] !== null && w[k] !== undefined), d, k);
-  const chart = (box, k, color, unit, f) => timeChart($(box), { series: [{ points: ws.map(w => ({ d: w._d, v: w[k] })), kind: 'line', color, markers: true, maxGap: 60 * MS_DAY }],
-    a, b, yFmt: v => f(v), height: 180,
-    hover: d => { const w = nearestW(d, k); if (!w) return null; return { t: w._d.getTime() + MS_DAY / 2, html: `${fmtDay(w._d)} at ${w._t}<br><b>${f(w[k])}</b> ${unit}` }; } });
-  chart('body-w', 'weight_kg', css('--s1'), 'kg', two);
-  // second chart: pick any measurement the weigh-ins have
-  const avail = BODY_COLS.filter(([k]) => k !== 'weight_kg' && ws.some(w => w[k] !== null && w[k] !== undefined));
+  // One chart, full width: pick the measurement (weight first). It spans the weigh-ins themselves, so a fortnight of
+  // readings isn't squeezed into the edge of a 90-day axis; a single reading is just the number.
+  const avail = BODY_COLS.filter(([k]) => ws.some(w => w[k] !== null && w[k] !== undefined));
   if (!avail.some(([k]) => k === BODY_PICK) && avail.length) BODY_PICK = avail[0][0];
   const pick = $('body-pick'); pick.innerHTML = '';
   for (const [k, name] of avail) {
@@ -940,7 +968,18 @@ function renderBody(P) {
     pick.appendChild(b);
   }
   const sel = avail.find(([k]) => k === BODY_PICK);
-  if (sel) chart('body-f', sel[0], css('--s2'), sel[2], sel[3]); else $('body-f').innerHTML = '';
+  if (sel) {
+    const [k, name, unit, f] = sel, pts = ws.filter(w => w[k] !== null && w[k] !== undefined);
+    const u = unit === '%' ? '%' : unit ? ' ' + unit : '';
+    if (pts.length < 2) {
+      $('body-f').innerHTML = `<div class="empty">${esc(name)}: <b class="fig">${esc(f(pts[0][k]))}${esc(u)}</b> on ${fmtDay(pts[0]._d)}, the only reading in this period.</div>`;
+    } else {
+      const [a, b] = readingSpan(pts.map(w => w._d), inRange ? P.start : pts[0]._d, inRange ? end : pts[pts.length - 1]._d);
+      timeChart($('body-f'), { series: [{ points: pts.map(w => ({ d: w._d, v: w[k] })), kind: 'line', color: css('--accent'), markers: true, maxGap: 60 * MS_DAY }],
+        a, b, yFmt: v => k === 'weight_kg' ? one(v) : f(v), height: 220,
+        hover: d => { const w = nearest(pts, d, k); if (!w) return null; return { t: w._d.getTime() + MS_DAY / 2, html: `${fmtDay(w._d)} at ${w._t}<br><b>${esc(f(w[k]))}</b>${esc(u)}` }; } });
+    }
+  } else $('body-f').innerHTML = '';
   // every weigh-in as a ledger row: when, what the scale measured, and the weight
   $('body-table').innerHTML = ledgerRows(ws.slice().reverse().slice(0, 30).map(w => ({ title: `${fmtDay(w._d)}, ${w._t}`,
     detail: BODY_COLS.filter(([k]) => k !== 'weight_kg' && w[k] !== null && w[k] !== undefined).slice(0, 6)
@@ -1170,6 +1209,7 @@ function dayChart(box, { lo, hi, series, bands = [], height = 180, yFmt = int, y
   const W = Math.max(280, box.clientWidth), H = height, L = 46, R = 10, T = 10, B = 24;
   let y0 = yMin !== undefined ? yMin : Math.min(...vs), y1 = Math.max(...vs);
   if (yMin === undefined) { const pad = (y1 - y0) * 0.1 || 1; y0 -= pad; y1 += pad; }
+  if (y1 - y0 < 8) { const c = (y0 + y1) / 2; y0 = c - 4; y1 = c + 4; }   // a reading or two: a scale with whole-number steps
   const ticks = niceTicks(y0, y1, 4); y0 = Math.min(y0, ticks[0]); y1 = Math.max(y1, ticks[ticks.length - 1]);
   const X = m => L + (m - lo) / (hi - lo) * (W - L - R), Y = v => T + (1 - (v - y0) / (y1 - y0)) * (H - T - B);
   const svg = el('svg', { viewBox: `0 0 ${W} ${H}`, height: H, role: 'img' }, box);
@@ -1219,7 +1259,7 @@ function hypnogram(box, sl) {
     for (const [st, a, b] of sl.segments) if (st === k) el('rect', { x: X(a), y: y + 3, width: Math.max(1, X(b) - X(a)), height: rowH - 6, rx: 2, fill: css(color) }, svg);
   });
   const step = (hi - lo) > 600 ? 120 : 60;
-  for (let m = lo; m <= hi; m += step) el('text', { x: X(m), y: H - 6, 'text-anchor': m === hi ? 'end' : 'middle', 'font-size': 11, fill: css('--text-3') }, svg).textContent = clock(m / 60);
+  for (let m = lo; m <= hi; m += step) if (m === hi || X(hi) - X(m) > 36) el('text', { x: X(m), y: H - 6, 'text-anchor': m === hi ? 'end' : 'middle', 'font-size': 11, fill: css('--text-3') }, svg).textContent = clock(m / 60);   // no label crowding the last
   const hit = el('rect', { x: L, y: 0, width: W - L - R, height: H, fill: 'transparent' }, svg);
   const move = ev => {
     const r = svg.getBoundingClientRect(), m = lo + ((ev.clientX - r.left) * W / r.width - L) / (W - L - R) * (hi - lo);
@@ -1276,6 +1316,24 @@ function renderDay() {
   const groups = (D.groups || []).filter(g => cards[g]);
   groups.forEach((g, i) => { h += chapter(g, `<div class="mcards">${cards[g].map(card).join('')}</div>`,
     i === 0 ? 'Each small chart runs from midnight to midnight; hover or tap it for the times.' : ''); });
+  // WHOOP strap: plain figures for the night and the day, the strain level with its sentence, any illness warning. No scores.
+  const W = D.whoop;
+  if (W) {
+    const at = iso => { try { return new Intl.DateTimeFormat('en-GB', { hour: '2-digit', minute: '2-digit', timeZone: W.time_zone }).format(new Date(iso)); } catch (e) { return ''; } };
+    const hmn = m => hm(m / 60), rowsW = [];
+    if (W.asleep_min !== null) rowsW.push({ title: 'Sleep', value: hmn(W.asleep_min),
+      detail: [W.sleep_start && W.sleep_end ? `${at(W.sleep_start)} to ${at(W.sleep_end)}` : '', W.in_bed_min !== null ? `in bed ${hmn(W.in_bed_min)}` : '',
+        W.sleep_estimated ? 'from heart rate only, no stages' : [['deep_min', 'deep'], ['rem_min', 'REM'], ['light_min', 'light']].filter(([k]) => W[k] !== null).map(([k, n]) => `${n} ${mins(W[k])}`).join(', ')]
+        .filter(Boolean).join(' · ') });
+    if (W.nap_min) rowsW.push({ title: 'Nap', value: mins(W.nap_min) });
+    if (W.resting_hr !== null) rowsW.push({ title: 'Resting heart rate', value: int(W.resting_hr), unit: 'bpm' });
+    if (W.hrv_rmssd_ms !== null || W.hrv_sdnn_ms !== null) rowsW.push({ title: 'Heart rate variability', value: int(W.hrv_rmssd_ms !== null ? W.hrv_rmssd_ms : W.hrv_sdnn_ms), unit: 'ms',
+      detail: W.hrv_rmssd_ms !== null ? `RMSSD${W.hrv_sdnn_ms !== null ? ` · SDNN ${int(W.hrv_sdnn_ms)} ms` : ''}` : 'SDNN' });
+    if (W.breathing_rate !== null) rowsW.push({ title: 'Breathing rate', value: one(W.breathing_rate), unit: 'breaths/min' });
+    if (W.strain_level) rowsW.push({ title: 'Strain', value: { light: 'Light', moderate: 'Moderate', hard: 'Hard', veryHard: 'Very hard' }[W.strain_level], detail: W.strain_because || '' });
+    if (W.illness_warning) rowsW.push({ title: 'Signs of illness', value: 'Worth a look', warn: true, detail: (W.illness_signs || []).join('; ') });
+    if (rowsW.length) h += chapter('WHOOP', `<div class="ledger">${ledgerRows(rowsW)}</div>`);
+  }
   // Food: the day's totals against the target, then each entry by meal.
   if (row['Calories in']) {
     const totals = FOOD_COLS.filter(([c]) => row[c] !== null && row[c] !== undefined && c !== 'Calories in').map(([c, name]) => `${int(row[c])} g ${name.toLowerCase()}`);

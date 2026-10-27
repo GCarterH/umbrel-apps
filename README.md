@@ -118,7 +118,9 @@ Uploads are written to disk before the reply, so a reply means the data is safe.
 | `GET /api/v1/daily?from=&to=` | One row per day: steps, distance, exercise, energy, resting/walking HR, VO₂ max, blood oxygen, sleep (hours, bedtime, deep/REM %), HRV, weight, body fat, workouts, blood pressure, calories and macros |
 | `GET /api/v1/day?date=` | One day in detail: hourly steps, heart rate through the day, sleep stages, workouts, every daily Watch measure |
 | `GET /api/v1/body` | Weigh-ins with body composition |
-| `GET /api/v1/baselines` | Your usual range for each daily measure (from your own last 90 days) and whether you're in it |
+| `GET /api/v1/baselines` | Your usual range for each daily measure (median ± 1.5 robust SD of your own last 90 days), whether you're in it, and when it stepped to a new level if it did (Bayesian online changepoint detection) |
+| `GET /api/v1/rhythm?week=` | Daily rhythm: Sleep Regularity Index, when heart rate peaks and dips (a cosinor fit), and social jet lag, with your usual from the weeks before |
+| `GET /api/v1/whoop/daily?from=&to=` | WHOOP strap days sent by the app: sleep, resting heart rate, HRV, breathing rate, strain level with its reason, illness warnings |
 | `GET /api/v1/checkin?week=` | A weekly check-in in plain sentences |
 | `GET /api/v1/export?from=&to=&types=` | Raw records, for backups or your own analysis |
 

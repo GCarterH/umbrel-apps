@@ -7,7 +7,7 @@ does), so the night before shows as negative minutes. Steps per hour use the sam
 """
 import datetime as dt
 from collections import Counter, defaultdict
-from . import body, daily as D, food, timeutil as T
+from . import body, daily as D, food, timeutil as T, whoop
 from .config import HOME_TZ
 
 
@@ -165,4 +165,4 @@ def day(con, ds):
     first = con.execute('SELECT MIN(date), MAX(date) FROM daily_cache').fetchone()   # the date picker's limits
     return dict(date=ds, tz=tz_name, place=D.place(tz_name), row=row, metrics=_metrics(recs, at), groups=GROUPS,
                 steps_hourly=steps_hourly, heart=heart, bp=bp,
-                sleep=sleep, workouts=workouts, weighins=weighins, food=food.on_day(con, ds), first_day=first[0], last_day=first[1])
+                sleep=sleep, workouts=workouts, weighins=weighins, food=food.on_day(con, ds), whoop=whoop.on_day(con, ds), first_day=first[0], last_day=first[1])
