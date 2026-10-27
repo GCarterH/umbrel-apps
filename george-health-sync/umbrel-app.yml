@@ -2,7 +2,7 @@ manifestVersion: 1
 id: george-health-sync
 category: files
 name: Health Sync
-version: "0.3.2"
+version: "0.3.3"
 tagline: Keep your Apple Health data on your Umbrel
 description: >-
   Receives Apple Health records from the Health Sync iPhone app and stores them in a SQLite
@@ -23,4 +23,4 @@ defaultUsername: ""
 defaultPassword: ""
 submitter: George Hay
 submission: ""
-releaseNotes: "The food log accepts recipe portions from the app (cook once, log a portion at a time)."
+releaseNotes: "WHOOP strap days from the app, shown on the Day tab as plain figures. Steadier personal ranges (median-based), a note when a measure settles at a new level, and a daily rhythm line in the weekly check-in (sleep regularity, when heart rate peaks and dips, weekend sleep shift)."
