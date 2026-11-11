@@ -60,7 +60,7 @@ def _row(f):
 
 
 def store(con, items):
-    """Insert new entries; an id already stored counts as a duplicate. Returns {accepted, duplicates, rejected}.
+    """Insert new entries; an id already stored counts as a duplicate, keeping only its latest meal. Returns {accepted, duplicates, rejected}.
     An entry deleted on the phone before it got here stays deleted (its id is in deletions)."""
     accepted = duplicates = 0
     rejected, now = [], T.now()
@@ -75,6 +75,8 @@ def store(con, items):
         if con.execute(sql, [row[c] for c in COLS] + [now, gone[0] if gone else None]).rowcount:
             accepted += 1
         else:
+            # Sent again because it was moved to another meal on the phone.
+            con.execute('UPDATE food_log SET meal = ? WHERE id = ?', (row['meal'], row['id']))
             duplicates += 1
     return dict(accepted=accepted, duplicates=duplicates, rejected=rejected)
 
