@@ -398,6 +398,9 @@ async function load() {
     const [dpart, tpart] = o.local.split(' '); o._d = toDate(dpart); o._t = tpart; return o; });
   FOOD = (META.food || []).map(a => { const o = {}; META.food_fields.forEach((c, i) => o[c] = a[i]);
     const [dpart, tpart] = o.local.split(' '); o._d = toDate(dpart); o._t = tpart; return o; });
+  const logged = new Map();
+  FOOD.forEach(f => { const ds = f.local.slice(0, 10); logged.has(ds) ? logged.get(ds).push(f) : logged.set(ds, [f]); });
+  ROWS.forEach(r => fillFromLog(r, logged.get(r.Date) || []));
 }
 
 // ------------------------------------------------------------ periods
@@ -883,6 +886,13 @@ const foodRow = (f, _, __, withDate = true) => ({ title: f.name + (f.brand ? ` Â
   detail: [withDate ? `${fmtShort(f._d || toDate(f.local.slice(0, 10)))} ${f._t || f.local.slice(11)}` : f.local.slice(11), f.meal ? cap(f.meal) : '',
     ['protein_g', 'carbs_g', 'fat_g'].filter(k => f[k] !== null && f[k] !== undefined).map(k => `${int(f[k])} g ${k.replace('_g', '').replace('carbs', 'carbs')}`).join(', ')].filter(Boolean).join(' Â· '),
   value: int(f.kcal), unit: 'kcal' });
+/** A day's food totals from the Health Sync app's log, for days with entries but no Dietary samples in Apple Health. */
+function fillFromLog(row, entries) {
+  if (row['Calories in'] || !entries.length) return row;
+  FOOD_COLS.forEach(([col, , , k]) => { const v = vals(entries, k);
+    row[col] = v.length ? (col === 'Calories in' ? Math.round(sum(v)) : Math.round(sum(v) * 10) / 10) : null; });
+  return row;
+}
 function vsTarget(v, t, unit) {
   if (!t) return '';
   const d = Math.round(v - t);   // exact, in whole kcal or grams
@@ -1197,6 +1207,7 @@ async function openDay(ds, scroll = false) {
     if (!r.ok) throw new Error('HTTP ' + r.status);
     const data = await r.json();
     if (DAY !== ds) return;   // another day was picked meanwhile
+    if (data.row) fillFromLog(data.row, data.food || []);
     DAYDATA = data; renderDay();
   } catch (e) { $('day-body').innerHTML = `<div class="empty">Could not load this day (${esc(e.message)}).</div>`; }
 }
