@@ -893,7 +893,7 @@ const foodRow = (f, _, __, withDate = true) => ({ title: f.name + (f.brand ? ` Â
 function fillFromLog(row, entries) {
   if (row['Calories in'] || !entries.length) return row;
   FOOD_COLS.forEach(([col, , , k]) => { const v = vals(entries, k);
-    row[col] = v.length ? (col === 'Calories in' ? Math.round(sum(v)) : Math.round(sum(v) * 10) / 10) : null; });
+    if (v.length && (row[col] === null || row[col] === undefined)) row[col] = col === 'Calories in' ? Math.round(sum(v)) : Math.round(sum(v) * 10) / 10; });
   return row;
 }
 function vsTarget(v, t, unit) {
