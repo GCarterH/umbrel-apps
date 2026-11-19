@@ -1289,9 +1289,10 @@ function renderDay() {
   const D = DAYDATA, box = $('day-body');
   if (!D) return;
   const d = toDate(D.date), row = D.row || {};
-  $('day-prev').disabled = !!D.first_day && D.date <= D.first_day;
+  const first = [D.first_day, ROWS.length && ROWS[0].Date].filter(Boolean).sort()[0];   // food-only days can predate the summary
+  $('day-prev').disabled = !!first && D.date <= first;
   $('day-next').disabled = D.date >= iso(new Date());
-  if (D.first_day) $('day-pick').min = D.first_day; $('day-pick').max = iso(new Date());
+  if (first) $('day-pick').min = first; $('day-pick').max = iso(new Date());
   // "Usual" = your middle value over the 90 days before this one, for measures in the daily summary.
   const before = ROWS.filter(r => r._d < d && r._d >= addDays(d, -90));
   const usual = col => { const u = before.length >= 14 ? median(vals(before, col)) : null; return u; };
