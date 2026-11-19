@@ -39,6 +39,9 @@ FOOD = {'Calories in': HK + 'DietaryEnergyConsumed', 'Protein g': HK + 'DietaryP
         'Fat g': HK + 'DietaryFatTotal', 'Fibre g': HK + 'DietaryFiber'}
 FOOD_MARGIN = 30 * 60
 HEART_RATE, HRV = HK + 'HeartRate', HK + 'HeartRateVariabilitySDNN'
+NOT_CAMERA_VITALS = "(type NOT IN ('HKQuantityTypeIdentifierHeartRate', 'HKQuantityTypeIdentifierHeartRateVariabilitySDNN', " \
+                    "'HKQuantityTypeIdentifierRespiratoryRate') OR " \
+                    "json_extract(metadata_json, '$.HealthSyncMeasurementSource') IS NOT 'camera-rPPG-POS')"
 # Night summaries from Health Export Kit files: awakenings and sleep HR/HRV, which need raw data the exports don't have.
 IMPORTED_NIGHT = 'HEKSleepSession'
 
@@ -213,7 +216,7 @@ def sleep_sessions(segs):
 
 
 def _avg_between(con, typ, s, e):
-    r = con.execute('SELECT AVG(value), COUNT(*) FROM samples WHERE type = ? AND start_utc >= ? AND start_utc <= ? AND deleted_at IS NULL',
+    r = con.execute('SELECT AVG(value), COUNT(*) FROM samples WHERE type = ? AND start_utc >= ? AND start_utc <= ? AND deleted_at IS NULL AND ' + NOT_CAMERA_VITALS,
                     (typ, T.fmt(s), T.fmt(e))).fetchone()
     return r[0] if r[1] else None
 

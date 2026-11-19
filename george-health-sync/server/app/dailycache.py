@@ -12,7 +12,7 @@ import datetime as dt, json, logging, threading, time
 from . import daily as D, db
 
 log = logging.getLogger('healthsync')
-VERSION = '2'   # 2: food columns (0.2.7)
+VERSION = '3'   # 3: exclude camera vitals
 CHUNK_DAYS = 31
 _wake = threading.Event()
 

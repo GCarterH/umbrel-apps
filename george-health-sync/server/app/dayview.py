@@ -99,7 +99,7 @@ def day(con, ds):
     zones = Counter()
     types = list(dict.fromkeys([hr_t, step_t] + bp_t + list(METRICS)))
     for r in D._rows(con, 'SELECT uuid, type, start_utc, end_utc, tz, value, label, source, device FROM samples WHERE type IN (%s) '
-                          'AND start_utc >= ? AND start_utc < ? AND deleted_at IS NULL AND value IS NOT NULL' % ','.join('?' * len(types)),
+                          'AND start_utc >= ? AND start_utc < ? AND deleted_at IS NULL AND value IS NOT NULL AND ' % ','.join('?' * len(types)) + D.NOT_CAMERA_VITALS,
                      types + [lo, hi]):
         D._prep(r)
         if r['type'] in BY_MORNING:   # one value a night: belongs to the morning you woke up, like sleep
