@@ -400,7 +400,10 @@ async function load() {
     const [dpart, tpart] = o.local.split(' '); o._d = toDate(dpart); o._t = tpart; return o; });
   const logged = new Map();
   FOOD.forEach(f => { const ds = f.local.slice(0, 10); logged.has(ds) ? logged.get(ds).push(f) : logged.set(ds, [f]); });
-  ROWS.forEach(r => fillFromLog(r, logged.get(r.Date) || []));
+  ROWS.forEach(r => { fillFromLog(r, logged.get(r.Date) || []); logged.delete(r.Date); });
+  // days with food entries and nothing else in Apple Health get a row of their own
+  logged.forEach((es, ds) => { const o = { Date: ds, _d: toDate(ds) }; META.columns.forEach(c => { if (c !== 'Date') o[c] = null; }); ROWS.push(fillFromLog(o, es)); });
+  if (logged.size) ROWS.sort((a, b) => a.Date < b.Date ? -1 : a.Date > b.Date ? 1 : 0);
 }
 
 // ------------------------------------------------------------ periods
@@ -1207,7 +1210,7 @@ async function openDay(ds, scroll = false) {
     if (!r.ok) throw new Error('HTTP ' + r.status);
     const data = await r.json();
     if (DAY !== ds) return;   // another day was picked meanwhile
-    if (data.row) fillFromLog(data.row, data.food || []);
+    data.row = fillFromLog(data.row || {}, data.food || []);
     DAYDATA = data; renderDay();
   } catch (e) { $('day-body').innerHTML = `<div class="empty">Could not load this day (${esc(e.message)}).</div>`; }
 }
@@ -1440,6 +1443,7 @@ function headline() {
       if (row.Steps) sum.push(`${int(row.Steps)} steps`);
       if (D.workouts.length) sum.push(`${D.workouts.length} workout${D.workouts.length > 1 ? 's' : ''}`);
       if (row['Sleep (h)']) sum.push(`${hm(row['Sleep (h)'])} of sleep`);
+      if (!sum.length && row['Calories in']) sum.push(`${int(row['Calories in'])} kcal eaten`);
       t = `${fmtDay(toDate(D.date))}${D.tz !== META.home_tz ? `, in ${D.place}` : ''}. ` + (sum.length ? `${cap(listWords(sum))}.` : 'Nothing recorded.');
     }
   } else if (TAB === 'activity') {
