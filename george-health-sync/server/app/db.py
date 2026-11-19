@@ -208,6 +208,17 @@ CREATE TABLE IF NOT EXISTS training_sets (
 CREATE INDEX IF NOT EXISTS training_sets_session ON training_sets (session_id, ex_order, set_order);
 CREATE INDEX IF NOT EXISTS training_sets_exercise ON training_sets (exercise_id);
 
+CREATE TABLE IF NOT EXISTS scan_comparisons (
+    id TEXT PRIMARY KEY,
+    kind TEXT NOT NULL,
+    start TEXT NOT NULL,
+    end TEXT NOT NULL,
+    received_at TEXT NOT NULL,
+    item_json TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS scan_comparisons_start ON scan_comparisons (start);
+CREATE INDEX IF NOT EXISTS scan_comparisons_kind_start ON scan_comparisons (kind, start);
+
 -- WHOOP strap days from the Health Sync app (POST /api/v1/whoop/daily, whoop.py): one row per local day woken on,
 -- replaced when the same day is sent again. Plain figures; no scores.
 CREATE TABLE IF NOT EXISTS whoop_days (

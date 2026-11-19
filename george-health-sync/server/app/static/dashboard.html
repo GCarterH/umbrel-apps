@@ -237,6 +237,12 @@ footer { color: var(--muted); font-size: 12px; margin-top: 34px; }
     <div class="cards" id="cards"></div>
   </section>
 
+  <section data-tab="compared">
+    <h2>Phone scan accuracy</h2>
+    <p class="lead">Estimates from paired scans over the last 90 days, not clinical validation. Heart rate tolerance: ±5 bpm. Bias is phone minus reference.</p>
+    <div id="scan-accuracy"></div>
+  </section>
+
   <section id="peers-sec" data-tab="compared">
     <h2 id="peers-title">Compared with men your age</h2>
     <p class="lead" id="peers-lead"></p>
@@ -1471,6 +1477,7 @@ function headline() {
 
 function renderAll(top = true) {
   hideTip();
+  renderScanAccuracy();
   document.querySelectorAll('.ranges button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.range === RANGE)));
   renderHeader();
   if (!ROWS.length) {
@@ -1492,6 +1499,20 @@ function renderAll(top = true) {
   renderFood(P);
   if (CK === null && CK_WEEK === null) { CK_WEEK = ''; loadCheckin(); }
   if (DAY === null) openDay(iso(lastDay())); else renderDay();
+}
+
+function renderScanAccuracy() {
+  const stats = META.scan_comparisons || {};
+  const rows = [];
+  for (const [kind, label] of [['camera_vitals', 'Camera vitals'], ['pulse_mirror', 'Pulse mirror']]) {
+    for (const ref of ['strap', 'watch']) {
+      const s = stats[kind]?.heart_rate?.[ref];
+      rows.push({ title: `${label} vs ${ref === 'strap' ? 'WHOOP strap' : 'Apple Watch'}`,
+        detail: s ? `n = ${s.n} · MAE ${one(s.mae)} bpm · bias ${s.bias >= 0 ? '+' : ''}${one(s.bias)} bpm · ${one(s.within_pct)}% within tolerance` : 'No paired heart rate readings yet',
+        value: '', unit: '' });
+    }
+  }
+  $('scan-accuracy').innerHTML = ledgerRows(rows);
 }
 
 // ------------------------------------------------------------ wiring

@@ -9,6 +9,7 @@ from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, StreamingResponse
 
 from . import __version__, body, config, daily as D, dailycache, dayview, db, documents, doses, food, insights, rhythm, training, whoop, idindex, ingest, spool, timeutil as T, weighins
+from . import scan_comparisons
 
 log = logging.getLogger('healthsync')
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(message)s')
@@ -373,6 +374,35 @@ async def delete_training(session_id: str, request: Request):
     return dict(deleted=session_id)
 
 
+@app.post('/api/v1/scan-comparisons')
+async def post_scan_comparisons(request: Request):
+    auth(request)
+    raw = await request.body()
+    enc = request.headers.get('content-encoding', '').lower().strip()
+
+    def work():
+        b = _have_body(raw, enc)
+        items = b.get('items') if isinstance(b, dict) else None
+        if not isinstance(items, list):
+            raise spool.BadBody(400, 'expected {"items": [...]}')
+        if len(items) > 5000:
+            raise spool.BadBody(413, 'at most 5,000 items per request')
+        with db.write_lock:
+            con = db.writer()
+            with con:
+                return scan_comparisons.store(con, items)
+    try:
+        return await run_in_threadpool(work)
+    except spool.BadBody as e:
+        raise HTTPException(e.status, str(e))
+
+
+@app.get('/api/v1/scan-comparisons')
+def get_scan_comparisons(request: Request, days: int = Query(90, ge=1, le=36500)):
+    auth(request)
+    return scan_comparisons.readings(db.reader(), days)
+
+
 @app.post('/api/v1/whoop/daily')
 async def post_whoop_daily(request: Request):
     """WHOOP strap days from the app: {"days": [{day, time_zone, illness_warning, sleep_start, sleep_end, asleep_min,
@@ -652,7 +682,7 @@ def dashboard_data():
                 columns=D.COLUMNS, rows=[[r.get(c) for c in D.COLUMNS] for r in rows],
                 body_fields=body.FIELDS, body=[[w[f] for f in body.FIELDS] for w in body.readings(con)],
                 food_fields=food.FIELDS, food=[[f[k] for k in food.FIELDS] for f in food.rows(con, newest_first=False)],
-                food_target=food.target(con),
+                food_target=food.target(con), scan_comparisons=scan_comparisons.readings(con)['summary'],
                 about=about_you(con))
 
 
