@@ -398,6 +398,12 @@ async function load() {
     const [dpart, tpart] = o.local.split(' '); o._d = toDate(dpart); o._t = tpart; return o; });
   FOOD = (META.food || []).map(a => { const o = {}; META.food_fields.forEach((c, i) => o[c] = a[i]);
     const [dpart, tpart] = o.local.split(' '); o._d = toDate(dpart); o._t = tpart; return o; });
+  const logged = new Map();
+  FOOD.forEach(f => { const ds = f.local.slice(0, 10); logged.has(ds) ? logged.get(ds).push(f) : logged.set(ds, [f]); });
+  ROWS.forEach(r => { fillFromLog(r, logged.get(r.Date) || []); logged.delete(r.Date); });
+  // days with food entries and nothing else in Apple Health get a row of their own
+  logged.forEach((es, ds) => { const o = { Date: ds, _d: toDate(ds) }; META.columns.forEach(c => { if (c !== 'Date') o[c] = null; }); ROWS.push(fillFromLog(o, es)); });
+  if (logged.size) ROWS.sort((a, b) => a.Date < b.Date ? -1 : a.Date > b.Date ? 1 : 0);
 }
 
 // ------------------------------------------------------------ periods
@@ -883,6 +889,13 @@ const foodRow = (f, _, __, withDate = true) => ({ title: f.name + (f.brand ? ` Â
   detail: [withDate ? `${fmtShort(f._d || toDate(f.local.slice(0, 10)))} ${f._t || f.local.slice(11)}` : f.local.slice(11), f.meal ? cap(f.meal) : '',
     ['protein_g', 'carbs_g', 'fat_g'].filter(k => f[k] !== null && f[k] !== undefined).map(k => `${int(f[k])} g ${k.replace('_g', '').replace('carbs', 'carbs')}`).join(', ')].filter(Boolean).join(' Â· '),
   value: int(f.kcal), unit: 'kcal' });
+/** A day's food totals from the Health Sync app's log, for days with entries but no Dietary samples in Apple Health. */
+function fillFromLog(row, entries) {
+  if (row['Calories in'] || !entries.length) return row;
+  FOOD_COLS.forEach(([col, , , k]) => { const v = vals(entries, k);
+    if (v.length && (row[col] === null || row[col] === undefined)) row[col] = col === 'Calories in' ? Math.round(sum(v)) : Math.round(sum(v) * 10) / 10; });
+  return row;
+}
 function vsTarget(v, t, unit) {
   if (!t) return '';
   const d = Math.round(v - t);   // exact, in whole kcal or grams
@@ -1197,6 +1210,7 @@ async function openDay(ds, scroll = false) {
     if (!r.ok) throw new Error('HTTP ' + r.status);
     const data = await r.json();
     if (DAY !== ds) return;   // another day was picked meanwhile
+    data.row = fillFromLog(data.row || {}, data.food || []);
     DAYDATA = data; renderDay();
   } catch (e) { $('day-body').innerHTML = `<div class="empty">Could not load this day (${esc(e.message)}).</div>`; }
 }
@@ -1275,9 +1289,10 @@ function renderDay() {
   const D = DAYDATA, box = $('day-body');
   if (!D) return;
   const d = toDate(D.date), row = D.row || {};
-  $('day-prev').disabled = !!D.first_day && D.date <= D.first_day;
+  const first = [D.first_day, ROWS.length && ROWS[0].Date].filter(Boolean).sort()[0];   // food-only days can predate the summary
+  $('day-prev').disabled = !!first && D.date <= first;
   $('day-next').disabled = D.date >= iso(new Date());
-  if (D.first_day) $('day-pick').min = D.first_day; $('day-pick').max = iso(new Date());
+  if (first) $('day-pick').min = first; $('day-pick').max = iso(new Date());
   // "Usual" = your middle value over the 90 days before this one, for measures in the daily summary.
   const before = ROWS.filter(r => r._d < d && r._d >= addDays(d, -90));
   const usual = col => { const u = before.length >= 14 ? median(vals(before, col)) : null; return u; };
@@ -1429,6 +1444,7 @@ function headline() {
       if (row.Steps) sum.push(`${int(row.Steps)} steps`);
       if (D.workouts.length) sum.push(`${D.workouts.length} workout${D.workouts.length > 1 ? 's' : ''}`);
       if (row['Sleep (h)']) sum.push(`${hm(row['Sleep (h)'])} of sleep`);
+      if (!sum.length && row['Calories in']) sum.push(`${int(row['Calories in'])} kcal eaten`);
       t = `${fmtDay(toDate(D.date))}${D.tz !== META.home_tz ? `, in ${D.place}` : ''}. ` + (sum.length ? `${cap(listWords(sum))}.` : 'Nothing recorded.');
     }
   } else if (TAB === 'activity') {
