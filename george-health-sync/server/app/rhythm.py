@@ -127,7 +127,7 @@ def hourly_hr(con, lo, hi):
     busy.sort()
     hours = defaultdict(list)
     for r in con.execute('SELECT start_utc, tz, value FROM samples WHERE type = ? AND start_utc >= ? AND start_utc < ? '
-                         'AND deleted_at IS NULL AND value IS NOT NULL', (D.HEART_RATE, lo, hi)):
+                         'AND deleted_at IS NULL AND value IS NOT NULL AND ' + D.NOT_CAMERA_VITALS, (D.HEART_RATE, lo, hi)):
         t = T.from_db(r['start_utc'])
         ts = t.timestamp()
         if any(s <= ts <= e for s, e in busy):
